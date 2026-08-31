@@ -4,8 +4,7 @@
 Projet du club
 
 ## Team Lead:
-Khadidiatou Seck Dieng
-Noureddine Faleh
+Khadidiatou Seck Dieng et Nourhane Anani
 
 ## Personnes ressources:
 - **Clément Fortin** — Département de biologie, Université Laval
