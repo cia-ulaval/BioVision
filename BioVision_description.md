@@ -4,7 +4,8 @@
 Projet du club
 
 ## Team Lead:
-Ça pourrait être vous!
+Khadidiatou Seck Dieng
+Noureddine Faleh
 
 ## Personnes ressources:
 - **Clément Fortin** — Département de biologie, Université Laval
