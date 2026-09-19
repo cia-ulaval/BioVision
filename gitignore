@@ -1,0 +1,28 @@
+# Données (jamais dans Git - trop volumineuses)
+data/
+*.mp4
+*.avi
+*.mov
+
+# Poids et checkpoints de modèles
+*.pt
+*.pth
+*.onnx
+models/checkpoints/
+
+# Environnement Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Suivi d'expériences
+wandb/
+mlruns/
+
+# Système
+.DS_Store
+.env

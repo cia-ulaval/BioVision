@@ -1,0 +1,27 @@
+# Traitement vidéo / images
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+pandas==2.2.2
+
+# Deep learning
+torch==2.4.1
+torchvision==0.19.1
+ultralytics==8.3.0
+transformers==4.44.2
+
+# Exploration et curation de données
+fiftyone==0.25.2
+
+# Suivi des expériences
+wandb==0.17.9
+
+# Visualisation
+matplotlib==3.9.2
+plotly==5.24.0
+
+# Notebooks
+jupyterlab==4.2.5
+
+# Utilitaires
+tqdm==4.66.5
+pyyaml==6.0.2

@@ -1,0 +1,27 @@
+services:
+  biovision:
+    build: .
+    volumes:
+      - .:/app                # code monté en direct (édition à chaud)
+      - ./data:/app/data       # dossier de données local, jamais commité
+    ports:
+      - "8888:8888"            # JupyterLab
+      - "6006:6006"            # TensorBoard, au besoin
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: >
+      jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=''
+    # Décommenter si un membre de l'équipe a un GPU NVIDIA disponible :
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Optionnel : à activer quand l'équipe est prête à annoter
+  # cvat:
+  #   image: cvat/server
+  #   ports:
+  #     - "8080:8080"
