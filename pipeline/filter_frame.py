@@ -14,16 +14,18 @@ def prepare_frame(frame):
     Args:
         frame (str or Path): Chemin de la frame à préparer.
 
+    Raises:
+        FileNotFoundError: Si le fichier n'existe pas ou ne peut pas être lu.
+        
     Returns:
         np.ndarray: Image préparée en niveaux de gris.
-        None: Si l'image ne peut pas être lue ou est invalide.
     """
 
     # lire l'image en niveaux de gris
     img = cv2.imread(str(frame), cv2.IMREAD_GRAYSCALE)
 
     if img is None:
-        return None
+        raise FileNotFoundError(f"Impossible de lire l'image à partir du chemin : {frame}")
 
     height, width = img.shape
 
@@ -55,14 +57,14 @@ def calculate_sharpness_score(gray_img):
 
     Raises:
         ValueError: Si l'image n'est pas en niveaux de gris (2 dimensions).
+        ValueError: Si l'image est None.
 
     Returns:
         float: Score de netteté (variance du Laplacien).
-        None: Si l'image est None.
     """
 
     if gray_img is None:
-        return None
+        raise ValueError("L'image ne peut pas être None.")
 
     # Vérifier que l'image est en niveaux de gris (2 dimensions)
     if gray_img.ndim != 2:
@@ -79,24 +81,41 @@ def calculate_exposure_score(gray_img):
 
     Raises:
         ValueError: Si l'image n'est pas en niveaux de gris (2 dimensions).
+        ValueError: Si l'image est None.
 
     Returns:    
         float: Score d'exposition (luminosité moyenne).
-        None: Si l'image est None.
     """
 
     if gray_img is None:
-        return None
+        raise ValueError("L'image ne peut pas être None.")
 
     if gray_img.ndim != 2:
         raise ValueError("L'image doit être en niveaux de gris (2 dimensions).")
 
     return float(np.mean(gray_img))
 
-# Créer une fonction pour calculer le score global d'une frame en combinant les scores de netteté et d'exposition
-def calculate_overall_score(sharpness_score, exposure_score):
-    return None  # Remplacer par le code pour calculer le score global;
+def validate_frame_quality(frame):
+    """Valide la qualité d'une frame en vérifiant son exposition et sa netteté.
 
-# Créer une fonction pour prendre une décision sur la qualité d'une frame en fonction de ses scores
-def decide_frame_quality(sharpness_score, exposure_score):
-    return None  # Remplacer par le code pour décider de la qualité de la frame;
+    Args:
+        frame (str or Path): Chemin de la frame à valider.
+
+    Returns:
+        bool: True si la frame est de bonne qualité, False sinon.
+    """
+
+    gray_img = prepare_frame(frame)
+    exposure = calculate_exposure_score(gray_img)
+    sharpness = calculate_sharpness_score(gray_img)
+
+    if sharpness is None or exposure is None:
+        return False
+
+    if exposure < EXPOSURE_THRESHOLD_LOW or exposure > EXPOSURE_THRESHOLD_HIGH:
+        return False
+
+    if sharpness < SHARPNESS_THRESHOLD:
+        return False
+
+    return True
