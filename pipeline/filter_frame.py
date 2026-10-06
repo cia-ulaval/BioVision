@@ -60,6 +60,7 @@ def calculate_sharpness_score(gray_img):
         float: Score de netteté (variance du Laplacien).
         None: Si l'image est None.
     """
+
     if gray_img is None:
         return None
 
@@ -70,9 +71,27 @@ def calculate_sharpness_score(gray_img):
     laplacian_var = float(cv2.Laplacian(gray_img, cv2.CV_64F).var())
     return laplacian_var
 
-# Créer une fonction pour calculer le score d'exposition d'une frame
-def calculate_exposure_score(frame):
-    return None  # Remplacer par le code pour calculer le score d'exposition;
+def calculate_exposure_score(gray_img):
+    """Calcule le score d'exposition d'une image en niveaux de gris en utilisant la luminosité moyenne entre les seuils (EXPOSURE_THRESHOLD_LOW, EXPOSURE_THRESHOLD_HIGH).
+
+    Args:
+        gray_img (np.ndarray): Image en niveaux de gris.
+
+    Raises:
+        ValueError: Si l'image n'est pas en niveaux de gris (2 dimensions).
+
+    Returns:    
+        float: Score d'exposition (luminosité moyenne).
+        None: Si l'image est None.
+    """
+
+    if gray_img is None:
+        return None
+
+    if gray_img.ndim != 2:
+        raise ValueError("L'image doit être en niveaux de gris (2 dimensions).")
+
+    return float(np.mean(gray_img))
 
 # Créer une fonction pour calculer le score global d'une frame en combinant les scores de netteté et d'exposition
 def calculate_overall_score(sharpness_score, exposure_score):
