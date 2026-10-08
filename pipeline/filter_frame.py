@@ -43,11 +43,11 @@ def prepare_frame(frame):
     return img_resized
 
 # Flou : variance laplacien en dessous de ce seuil est considéré comme flou
-SHARPNESS_THRESHOLD = 100.0
+SHARPNESS_THRESHOLD = 40.0
 
 # Exposition : luminosité moyenne en dehors de ce seuil est considérée comme sous-exposée ou surexposée
-EXPOSURE_THRESHOLD_LOW = 40.0
-EXPOSURE_THRESHOLD_HIGH = 220.0
+EXPOSURE_THRESHOLD_LOW = 55.0
+EXPOSURE_THRESHOLD_HIGH = 160.0
 
 def calculate_sharpness_score(gray_img):
     """Calcule le score de netteté d'une image en niveaux de gris en utilisant la variance du Laplacien.
