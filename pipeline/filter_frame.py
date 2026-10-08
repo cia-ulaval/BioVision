@@ -2,8 +2,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from pipeline.frame_io import get_frames_from_folder, export_filtered_frames
+
 # Récupération des frames en utilisant un chemin d'accès à un dossier contenant les frames
-PATH_TO_FRAMES = Path(__file__).parent.parent / "data" / "frames_test" 
+PATH_TO_FRAMES = Path(__file__).parent.parent / "data" / "frames" / "caribou_test_all"
 
 # Taille maximale du côté pour le redimensionnement des frames
 MAX_SIDE = 640  
@@ -119,3 +121,32 @@ def validate_frame_quality(frame):
         return False
 
     return True
+
+def filter_frames(input_folder=PATH_TO_FRAMES, output_folder=None):
+    """Filtre les frames d'un dossier et exporte celles de bonne qualité.
+
+    Args:
+        input_folder (str or Path): Dossier source (par défaut : PATH_TO_FRAMES).
+        output_folder (str or Path, optional): Dossier de sortie. Si None, pas d'export.
+
+    Returns:
+        list: Chemins des frames valides.
+    """
+
+    frames = get_frames_from_folder(input_folder)
+
+    valid_frames = []
+    for frame in frames:
+        try:
+            if validate_frame_quality(frame):
+                valid_frames.append(frame)
+        except FileNotFoundError as error:
+            # Image corrompue ou illisible : on l'ignore et on continue
+            print(f"Frame ignorée : {error}")
+
+    if output_folder is not None:
+        export_filtered_frames(valid_frames, output_folder)
+
+    print(f"{len(valid_frames)}/{len(frames)} frames retenues")
+
+    return valid_frames
