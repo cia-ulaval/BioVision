@@ -1,5 +1,22 @@
+from dataclasses import dataclass
 from pathlib import Path
 import csv
+
+@dataclass
+class FrameResult:
+    """Résultat du filtrage d'une frame.
+
+    Attributes:
+        path (str or Path): Chemin de la frame.
+        exposure (float): Score d'exposition (luminosité moyenne).
+        sharpness (float): Score de netteté (variance du Laplacien).
+        result (bool): True si la frame est retenue, False sinon.
+    """
+
+    path: Path
+    exposure: float
+    sharpness: float
+    result: bool
 
 def get_frames_from_folder(folder_path, extensions=(".jpg", ".png")):
     """Récupère les frames d'un dossier et de ses sous-dossiers selon les extensions spécifiées.
@@ -36,22 +53,23 @@ def get_frames_from_folder(folder_path, extensions=(".jpg", ".png")):
 
     return sorted(frames)
 
-def export_frames_csv(frames, base_folder, csv_path):
-    """Exporte les chemins des frames filtrées vers un fichier CSV.
+def export_frame_results_csv(frame_results, base_folder, csv_path):
+    """Exporte les résultats du filtrage de toutes les frames vers un fichier CSV.
 
-    Le CSV contient une colonne "frame_path" avec le chemin de chaque frame relatif
-    à base_folder, toujours écrit avec des "/" (ex. : "video_01/frame_0001.jpg").
-    Pour retrouver une frame : base_folder / frame_path.
-
-    Le fichier est créé s'il n'existe pas et remplacé s'il existe déjà.
+    Le CSV contient une ligne par frame avec les colonnes :
+        - frame_path : chemin relatif à base_folder, toujours écrit avec des "/"
+          (ex. : "video_01/frame_0001.jpg"). Pour retrouver une frame : base_folder / frame_path.
+        - sharpness : score de netteté (variance du Laplacien).
+        - exposure : score d'exposition (luminosité moyenne).
+        - result : True si la frame est retenue, False sinon.
 
     Args:
-        frames (list): Liste des chemins des frames à exporter.
+        frame_results (list[FrameResult]): Résultats à exporter.
         base_folder (str or Path): Dossier racine des frames.
         csv_path (str or Path): Chemin du fichier CSV de sortie.
 
     Returns:
-        list: Liste des chemins des frames écrites dans le CSV.
+        list[FrameResult]: Résultats écrits dans le CSV.
 
     Raises:
         ValueError: Si une frame ne se trouve pas dans base_folder.
@@ -65,10 +83,15 @@ def export_frames_csv(frames, base_folder, csv_path):
 
     with open(csv_path, mode='w', newline='', encoding='utf-8') as csvfile:
         csv_writer = csv.writer(csvfile)
-        csv_writer.writerow(['frame_path'])
+        csv_writer.writerow(['frame_path', 'sharpness', 'exposure', 'result'])
 
-        for frame in frames:
-            relative_path = Path(frame).relative_to(base_folder)
-            csv_writer.writerow([relative_path.as_posix()])
+        for frame_result in frame_results:
+            relative_path = Path(frame_result.path).relative_to(base_folder)
+            csv_writer.writerow([
+                relative_path.as_posix(),
+                frame_result.sharpness,
+                frame_result.exposure,
+                frame_result.result
+            ])
 
-    return frames
+    return frame_results

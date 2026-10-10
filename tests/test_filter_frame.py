@@ -217,22 +217,30 @@ class TestValidateFrameQuality(unittest.TestCase):
     def test_validate_frame_quality_with_good_image(self):
         # Nette (damier) et bien exposée (moyenne 127.5)
         path = self.write_image(self.make_checkerboard(0, 255))
-        self.assertTrue(validate_frame_quality(path))
+        self.assertTrue(validate_frame_quality(path)[2])
 
     def test_validate_frame_quality_with_blurry_image(self):
         # Bien exposée (moyenne 128) mais floue (aucun contour, netteté 0)
         path = self.write_image(np.full((100, 100), 128, dtype=np.uint8))
-        self.assertFalse(validate_frame_quality(path))
+        self.assertFalse(validate_frame_quality(path)[2])
+
+    def test_validate_frame_quality_returns_scores(self):
+        # Les scores sont retournés même si la frame est rejetée (ici floue)
+        path = self.write_image(np.full((100, 100), 128, dtype=np.uint8))
+        exposure, sharpness, result = validate_frame_quality(path)
+        self.assertEqual(exposure, 128.0)
+        self.assertEqual(sharpness, 0.0)
+        self.assertFalse(result)
 
     def test_validate_frame_quality_with_underexposed_image(self):
         # Nette mais trop sombre (moyenne 10 sous le seuil bas)
         path = self.write_image(self.make_checkerboard_with_mean(EXPOSURE_THRESHOLD_LOW - 10))
-        self.assertFalse(validate_frame_quality(path))
+        self.assertFalse(validate_frame_quality(path)[2])
 
     def test_validate_frame_quality_with_overexposed_image(self):
         # Nette mais trop claire (moyenne 10 au-dessus du seuil haut)
         path = self.write_image(self.make_checkerboard_with_mean(EXPOSURE_THRESHOLD_HIGH + 10))
-        self.assertFalse(validate_frame_quality(path))
+        self.assertFalse(validate_frame_quality(path)[2])
 
     def test_validate_frame_quality_at_exposure_thresholds(self):
         # Les seuils eux-mêmes sont acceptés (comparaisons strictes < et >)
@@ -241,13 +249,13 @@ class TestValidateFrameQuality(unittest.TestCase):
                 img = self.make_checkerboard_with_mean(mean)
                 self.assertEqual(calculate_exposure_score(img), mean)
                 path = self.write_image(img)
-                self.assertTrue(validate_frame_quality(path))
+                self.assertTrue(validate_frame_quality(path)[2])
 
     def test_validate_frame_quality_with_color_image(self):
         # Une image couleur est convertie en niveaux de gris : c'est une entrée valide
         color_img = cv2.cvtColor(self.make_checkerboard(0, 255), cv2.COLOR_GRAY2BGR)
         path = self.write_image(color_img)
-        self.assertTrue(validate_frame_quality(path))
+        self.assertTrue(validate_frame_quality(path)[2])
 
     def test_validate_frame_quality_with_unreadable_file(self):
         # Un fichier qui n'est pas une image fait lever l'exception de prepare_frame
@@ -311,7 +319,7 @@ class TestFilterFrames(unittest.TestCase):
 
         self.assertEqual(frames, [good])
         self.assertIn("CSV exporté", output)
-        self.assertEqual(self.read_csv(csv_path), [["frame_path"], ["good.png"]])
+        self.assertEqual([row[0] for row in self.read_csv(csv_path)], ["frame_path", "good.png"])
 
     def test_filter_frames_when_export_fails(self):
         good = self.write_frame("good.png")
@@ -342,6 +350,21 @@ class TestFilterFrames(unittest.TestCase):
         self.assertEqual(frames, [good])
         self.assertIn("1/2 frames retenues", output)
 
+    def test_filter_frames_csv_contains_rejected_frames(self):
+        self.write_frame("blurry.png", sharp=False)
+        self.write_frame("good.png")
+        csv_path = self.output_folder / "frames.csv"
+
+        frames, _ = self.run_filter_frames(csv_path)
+
+        # La frame floue n'est pas retournée, mais elle est dans le CSV avec ses scores
+        rows = self.read_csv(csv_path)
+        self.assertEqual(rows[0], ["frame_path", "sharpness", "exposure", "result"])
+        self.assertEqual(rows[1], ["blurry.png", "0.0", "128.0", "False"])
+        self.assertEqual([row[0] for row in rows[1:]], ["blurry.png", "good.png"])
+        self.assertEqual([row[3] for row in rows[1:]], ["False", "True"])
+        self.assertEqual(len(frames), 1)
+
     def test_filter_frames_with_subfolders(self):
         good = self.write_frame("video_01/frame_0001.png")
         csv_path = self.output_folder / "frames.csv"
@@ -349,7 +372,7 @@ class TestFilterFrames(unittest.TestCase):
         frames, _ = self.run_filter_frames(csv_path)
 
         self.assertEqual(frames, [good])
-        self.assertEqual(self.read_csv(csv_path), [["frame_path"], ["video_01/frame_0001.png"]])
+        self.assertEqual([row[0] for row in self.read_csv(csv_path)], ["frame_path", "video_01/frame_0001.png"])
 
     def test_filter_frames_with_nonexistent_input_folder(self):
         with self.assertRaises(ValueError):

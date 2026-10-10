@@ -2,7 +2,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from pipeline.frame_io import get_frames_from_folder, export_frames_csv
+from pipeline.frame_io import get_frames_from_folder, export_frame_results_csv, FrameResult
 
 # Récupération des frames en utilisant un chemin d'accès à un dossier contenant les frames
 PATH_TO_FRAMES = Path(__file__).parent.parent / "data" / "frames" / "caribou_test_all"
@@ -104,30 +104,28 @@ def validate_frame_quality(frame):
         frame (str or Path): Chemin de la frame à valider.
 
     Returns:
-        bool: True si la frame est de bonne qualité, False sinon.
+        tuple: (exposure, sharpness, result) où exposure et sharpness sont les scores
+            calculés et result vaut True si la frame est de bonne qualité, False sinon.
     """
 
     gray_img = prepare_frame(frame)
     exposure = calculate_exposure_score(gray_img)
     sharpness = calculate_sharpness_score(gray_img)
 
-    if sharpness is None or exposure is None:
-        return False
-
     if exposure < EXPOSURE_THRESHOLD_LOW or exposure > EXPOSURE_THRESHOLD_HIGH:
-        return False
+        return exposure, sharpness, False
 
     if sharpness < SHARPNESS_THRESHOLD:
-        return False
+        return exposure, sharpness, False
 
-    return True
+    return exposure, sharpness, True
 
 def filter_frames(input_folder=PATH_TO_FRAMES, csv_path=None):
-    """Filtre les frames d'un dossier (et de ses sous-dossiers) et exporte la liste
-    de celles de bonne qualité dans un CSV.
+    """Filtre les frames d'un dossier (et de ses sous-dossiers) et exporte les
+    résultats de toutes les frames dans un CSV.
 
     Les frames ne sont pas copiées : le CSV contient leurs chemins relatifs à
-    input_folder.
+    input_folder, leurs scores de netteté et d'exposition, et la décision.
 
     Un message indique toujours le résultat de l'export : CSV écrit, aucun export
     demandé (csv_path vaut None) ou échec de l'écriture. En cas d'échec, les frames
@@ -144,14 +142,16 @@ def filter_frames(input_folder=PATH_TO_FRAMES, csv_path=None):
 
     frames = get_frames_from_folder(input_folder)
 
-    valid_frames = []
+    frame_results = []
     for frame in frames:
         try:
-            if validate_frame_quality(frame):
-                valid_frames.append(frame)
+            exposure, sharpness, result = validate_frame_quality(frame)
+            frame_results.append(FrameResult(frame, exposure, sharpness, result))
         except FileNotFoundError as error:
             # Image corrompue ou illisible : on l'ignore et on continue
             print(f"Frame ignorée : {error}")
+
+    valid_frames = [frame_result.path for frame_result in frame_results if frame_result.result]
 
     print(f"{len(valid_frames)}/{len(frames)} frames retenues")
 
@@ -159,7 +159,7 @@ def filter_frames(input_folder=PATH_TO_FRAMES, csv_path=None):
         print("Aucun CSV exporté : csv_path non fourni")
     else:
         try:
-            export_frames_csv(valid_frames, input_folder, csv_path)
+            export_frame_results_csv(frame_results, input_folder, csv_path)
             print(f"CSV exporté : {csv_path}")
         except OSError as error:
             # Problème d'écriture

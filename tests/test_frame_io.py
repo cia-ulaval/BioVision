@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pipeline.frame_io import get_frames_from_folder, export_frames_csv
+from pipeline.frame_io import get_frames_from_folder, export_frame_results_csv, FrameResult
 
 class TestGetFramesFromFolder(unittest.TestCase):
     def setUp(self):
@@ -101,7 +101,9 @@ class TestGetFramesFromFolder(unittest.TestCase):
         ])
         self.assertEqual(frames, expected_frames)
 
-class TestExportFramesCSV(unittest.TestCase):
+HEADER = ["frame_path", "sharpness", "exposure", "result"]
+
+class TestExportFrameResultsCSV(unittest.TestCase):
     def setUp(self):
         # Créer un dossier temporaire pour les tests
         self.test_dir = tempfile.TemporaryDirectory()
@@ -137,90 +139,97 @@ class TestExportFramesCSV(unittest.TestCase):
         frame.write_text("test")
         return frame
 
-    def test_export_frames_csv(self):
-        frames = [self.frame1, self.frame2]
+    def make_result(self, frame, result=True):
+        # Scores fixes : seul le chemin et la décision varient selon les tests
+        return FrameResult(frame, exposure=120.5, sharpness=80.25, result=result)
 
-        exported_frames = export_frames_csv(frames, base_folder=self.frames_folder, csv_path=self.csv_path)
+    def test_export_frame_results_csv(self):
+        frame_results = [self.make_result(self.frame1), self.make_result(self.frame2, result=False)]
 
+        exported = export_frame_results_csv(frame_results, base_folder=self.frames_folder, csv_path=self.csv_path)
+
+        # Toutes les frames sont écrites, retenues ou non, avec leurs scores
         self.assertEqual(self.read_csv(self.csv_path), [
-            ["frame_path"],
-            ["frame1.jpg"],
-            ["frame2.png"]
+            HEADER,
+            ["frame1.jpg", "80.25", "120.5", "True"],
+            ["frame2.png", "80.25", "120.5", "False"]
         ])
 
-        # Vérifier que la fonction retourne la liste des frames exportées
-        self.assertEqual(exported_frames, frames)
+        # Vérifier que la fonction retourne les résultats exportés
+        self.assertEqual(exported, frame_results)
 
-    def test_export_frames_csv_with_subfolders(self):
+    def test_export_frame_results_csv_with_subfolders(self):
         frame = self.make_video_frame("video_01", "frame_0001.jpg")
 
-        export_frames_csv([frame], base_folder=self.frames_folder, csv_path=self.csv_path)
+        export_frame_results_csv([self.make_result(frame)], base_folder=self.frames_folder, csv_path=self.csv_path)
 
         # Le chemin garde le sous-dossier de la vidéo, toujours avec des "/"
         self.assertEqual(self.read_csv(self.csv_path), [
-            ["frame_path"],
-            ["video_01/frame_0001.jpg"]
+            HEADER,
+            ["video_01/frame_0001.jpg", "80.25", "120.5", "True"]
         ])
 
-    def test_export_frames_csv_with_same_name_in_two_videos(self):
+    def test_export_frame_results_csv_with_same_name_in_two_videos(self):
         frame_a = self.make_video_frame("video_01", "frame_0001.jpg")
         frame_b = self.make_video_frame("video_02", "frame_0001.jpg")
 
-        export_frames_csv([frame_a, frame_b], base_folder=self.frames_folder, csv_path=self.csv_path)
+        export_frame_results_csv([self.make_result(frame_a), self.make_result(frame_b)],
+                                 base_folder=self.frames_folder, csv_path=self.csv_path)
 
         # Les deux frames sont gardées, chacune avec sa vidéo d'origine
-        self.assertEqual(self.read_csv(self.csv_path), [
-            ["frame_path"],
-            ["video_01/frame_0001.jpg"],
-            ["video_02/frame_0001.jpg"]
+        self.assertEqual([row[0] for row in self.read_csv(self.csv_path)], [
+            "frame_path",
+            "video_01/frame_0001.jpg",
+            "video_02/frame_0001.jpg"
         ])
 
-    def test_export_frames_csv_with_empty_list(self):
-        exported_frames = export_frames_csv([], base_folder=self.frames_folder, csv_path=self.csv_path)
+    def test_export_frame_results_csv_with_empty_list(self):
+        exported = export_frame_results_csv([], base_folder=self.frames_folder, csv_path=self.csv_path)
 
         # Seulement l'en-tête
-        self.assertEqual(self.read_csv(self.csv_path), [["frame_path"]])
-        self.assertEqual(exported_frames, [])
+        self.assertEqual(self.read_csv(self.csv_path), [HEADER])
+        self.assertEqual(exported, [])
 
-    def test_export_frames_csv_overwrites_existing_csv(self):
+    def test_export_frame_results_csv_overwrites_existing_csv(self):
         self.csv_path.write_text("ancien contenu\n")
 
-        export_frames_csv([self.frame1], base_folder=self.frames_folder, csv_path=self.csv_path)
+        export_frame_results_csv([self.make_result(self.frame1)], base_folder=self.frames_folder, csv_path=self.csv_path)
 
         # L'ancien contenu est remplacé (mode "w")
         self.assertEqual(self.read_csv(self.csv_path), [
-            ["frame_path"],
-            ["frame1.jpg"]
+            HEADER,
+            ["frame1.jpg", "80.25", "120.5", "True"]
         ])
 
-    def test_export_frames_csv_creates_parent_folder(self):
+    def test_export_frame_results_csv_creates_parent_folder(self):
         csv_path = self.test_path / "results" / "output.csv"
 
         # Vérifier que le dossier parent n'existe pas avant l'exportation
         self.assertFalse(csv_path.parent.exists())
 
-        export_frames_csv([self.frame1], base_folder=self.frames_folder, csv_path=csv_path)
+        export_frame_results_csv([self.make_result(self.frame1)], base_folder=self.frames_folder, csv_path=csv_path)
 
         self.assertEqual(self.read_csv(csv_path), [
-            ["frame_path"],
-            ["frame1.jpg"]
+            HEADER,
+            ["frame1.jpg", "80.25", "120.5", "True"]
         ])
 
-    def test_export_frames_csv_with_str_paths(self):
-        frames = [str(self.frame1), str(self.frame2)]
+    def test_export_frame_results_csv_with_str_paths(self):
+        frame_results = [self.make_result(str(self.frame1)), self.make_result(str(self.frame2))]
 
-        export_frames_csv(frames, base_folder=str(self.frames_folder), csv_path=str(self.csv_path))
+        export_frame_results_csv(frame_results, base_folder=str(self.frames_folder), csv_path=str(self.csv_path))
 
-        self.assertEqual(self.read_csv(self.csv_path), [
-            ["frame_path"],
-            ["frame1.jpg"],
-            ["frame2.png"]
+        self.assertEqual([row[0] for row in self.read_csv(self.csv_path)], [
+            "frame_path",
+            "frame1.jpg",
+            "frame2.png"
         ])
 
-    def test_export_frames_csv_with_frame_outside_base_folder(self):
+    def test_export_frame_results_csv_with_frame_outside_base_folder(self):
         outside_frame = self.test_path / "outside.jpg"
         outside_frame.write_text("test")
 
         # relative_to() lève une ValueError si la frame n'est pas dans base_folder
         with self.assertRaises(ValueError):
-            export_frames_csv([outside_frame], base_folder=self.frames_folder, csv_path=self.csv_path)
+            export_frame_results_csv([self.make_result(outside_frame)],
+                                     base_folder=self.frames_folder, csv_path=self.csv_path)
