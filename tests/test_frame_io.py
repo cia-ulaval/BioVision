@@ -84,6 +84,22 @@ class TestGetFramesFromFolder(unittest.TestCase):
         frames = get_frames_from_folder(self.test_path, extensions=(".tiff", ".webp"))
         self.assertEqual(frames, [])
 
+    def test_get_frames_with_subfolder(self):
+        # Créer un sous-dossier pour les tests
+        test_subfolder = self.test_path / "subfolder"
+        test_subfolder.mkdir(exist_ok=True)
+        test_subfolder.joinpath("frame3.jpg").write_text("test")
+
+        frames = get_frames_from_folder(self.test_path)
+        expected_frames = sorted([
+            self.test_path / "frame1.jpg",
+            self.test_path / "frame2.png",
+            self.test_path / "frame4.JPG",
+            self.test_path / "frame6.PNG",
+            test_subfolder / "frame3.jpg"
+        ])
+        self.assertEqual(frames, expected_frames)
+
 class TestExportFilteredFrames(unittest.TestCase):
     def setUp(self):
         # Créer un dossier temporaire pour les tests

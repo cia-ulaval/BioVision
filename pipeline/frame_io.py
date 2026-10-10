@@ -9,7 +9,7 @@ def get_frames_from_folder(folder_path, extensions=(".jpg", ".png")):
         extensions (tuple or str): Extensions de fichiers à inclure (par défaut : (".jpg", ".png")).
 
     Returns:
-        list: Liste des chemins des frames trouvées dans le dossier.
+        list: Liste des chemins des frames correspondant aux extensions spécifiées.
     """
 
     folder = Path(folder_path)
@@ -26,7 +26,7 @@ def get_frames_from_folder(folder_path, extensions=(".jpg", ".png")):
     extensions = tuple(ext if ext.startswith('.') else f".{ext}" for ext in extensions)
 
     frames = []
-    for element in folder.iterdir():
+    for element in folder.rglob("*"):
         if element.is_file() and element.suffix.lower() in extensions:
             frames.append(element)
 
