@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pipeline.frame_io import get_frames_from_folder, export_frame_results_csv, FrameResult
+from pipeline.frame_io import get_frames_from_folder, export_frame_results_csv, read_frame_results_csv, FrameResult
 
 class TestGetFramesFromFolder(unittest.TestCase):
     def setUp(self):
@@ -233,3 +233,68 @@ class TestExportFrameResultsCSV(unittest.TestCase):
         with self.assertRaises(ValueError):
             export_frame_results_csv([self.make_result(outside_frame)],
                                      base_folder=self.frames_folder, csv_path=self.csv_path)
+
+class TestReadFrameResultsCSV(unittest.TestCase):
+    def setUp(self):
+        # Créer un dossier temporaire pour les tests
+        self.test_dir = tempfile.TemporaryDirectory()
+        self.test_path = Path(self.test_dir.name)
+        self.frames_folder = self.test_path / "frames"
+        self.csv_path = self.test_path / "output.csv"
+
+        # Une frame retenue et une rejetée, dont une dans un sous-dossier de vidéo
+        self.good = FrameResult(self.frames_folder / "video_01" / "frame_0001.jpg",
+                                exposure=120.5, sharpness=80.25, result=True)
+        self.bad = FrameResult(self.frames_folder / "frame2.png",
+                               exposure=30.0, sharpness=5.125, result=False)
+
+    def tearDown(self):
+        # Nettoyer le dossier temporaire après les tests
+        self.test_dir.cleanup()
+
+    def export(self, frame_results):
+        export_frame_results_csv(frame_results, base_folder=self.frames_folder, csv_path=self.csv_path)
+
+    def test_read_frame_results_csv_round_trip(self):
+        self.export([self.good, self.bad])
+
+        # Relire le CSV redonne exactement les mêmes résultats, dans le même ordre
+        frame_results = read_frame_results_csv(self.csv_path, self.frames_folder)
+        self.assertEqual(frame_results, [self.good, self.bad])
+
+    def test_read_frame_results_csv_with_valid_mode(self):
+        self.export([self.good, self.bad])
+
+        frame_results = read_frame_results_csv(self.csv_path, self.frames_folder, filter_mode="valid")
+        self.assertEqual(frame_results, [self.good])
+
+    def test_read_frame_results_csv_converts_types(self):
+        self.export([self.bad])
+
+        # Les chaînes du CSV sont reconverties : "False" doit redonner False, pas True
+        frame_result = read_frame_results_csv(self.csv_path, self.frames_folder)[0]
+        self.assertIs(frame_result.result, False)
+        self.assertIsInstance(frame_result.exposure, float)
+        self.assertIsInstance(frame_result.sharpness, float)
+        self.assertIsInstance(frame_result.path, Path)
+
+    def test_read_frame_results_csv_with_str_paths(self):
+        self.export([self.good])
+
+        frame_results = read_frame_results_csv(str(self.csv_path), str(self.frames_folder))
+        self.assertEqual(frame_results, [self.good])
+
+    def test_read_frame_results_csv_with_only_header(self):
+        self.export([])
+
+        self.assertEqual(read_frame_results_csv(self.csv_path, self.frames_folder), [])
+
+    def test_read_frame_results_csv_with_invalid_filter_mode(self):
+        self.export([self.good])
+
+        with self.assertRaises(ValueError):
+            read_frame_results_csv(self.csv_path, self.frames_folder, filter_mode="vaild")
+
+    def test_read_frame_results_csv_with_nonexistent_file(self):
+        with self.assertRaises(FileNotFoundError):
+            read_frame_results_csv(self.test_path / "missing.csv", self.frames_folder)

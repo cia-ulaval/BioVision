@@ -95,3 +95,48 @@ def export_frame_results_csv(frame_results, base_folder, csv_path):
             ])
 
     return frame_results
+
+FILTER_MODES = ("all", "valid")
+
+def read_frame_results_csv(csv_path, base_folder, filter_mode="all"):
+    """Lit un CSV écrit par export_frame_results_csv et retourne les FrameResult.
+
+    Args:
+        csv_path (str or Path): Chemin du fichier CSV à lire.
+        base_folder (str or Path): Dossier racine des frames, utilisé pour
+            reconstruire leur chemin complet : base_folder / frame_path.
+        filter_mode (str): "all" pour toutes les frames (par défaut),
+            "valid" pour seulement les frames retenues.
+
+    Returns:
+        list[FrameResult]: Résultats lus, dans l'ordre du CSV.
+
+    Raises:
+        ValueError: Si filter_mode n'est pas une valeur de FILTER_MODES.
+        FileNotFoundError: Si le CSV n'existe pas.
+    """
+
+    # Vérifie que le filter_mode est valide
+    if filter_mode not in FILTER_MODES:
+        raise ValueError(f"filter_mode invalide : {filter_mode!r} (attendu : {FILTER_MODES})")
+
+    base_folder = Path(base_folder)
+
+    frame_results = []
+    with open(csv_path, mode='r', newline='', encoding='utf-8') as csvfile:
+        for row in csv.DictReader(csvfile):
+            # Lit le résultat de la frame
+            result = row["result"] == "True"
+
+            # Ignore la frame si elle est rejetée et que filter_mode vaut "valid"
+            if filter_mode == "valid" and not result:
+                continue
+
+            frame_results.append(FrameResult(
+                path=base_folder / row["frame_path"],
+                exposure=float(row["exposure"]),
+                sharpness=float(row["sharpness"]),
+                result=result
+            ))
+
+    return frame_results
