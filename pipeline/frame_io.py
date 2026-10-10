@@ -1,15 +1,19 @@
 from pathlib import Path
-import shutil
+import csv
 
 def get_frames_from_folder(folder_path, extensions=(".jpg", ".png")):
-    """Récupère les frames à partir d'un dossier donné selon les extensions spécifiées.
+    """Récupère les frames d'un dossier et de ses sous-dossiers selon les extensions spécifiées.
 
     Args:
         folder_path (str or Path): Chemin du dossier contenant les frames.
         extensions (tuple or str): Extensions de fichiers à inclure (par défaut : (".jpg", ".png")).
 
     Returns:
-        list: Liste des chemins des frames correspondant aux extensions spécifiées.
+        list: Liste triée des chemins des frames correspondant aux extensions spécifiées,
+            y compris celles des sous-dossiers.
+
+    Raises:
+        ValueError: Si folder_path n'existe pas ou n'est pas un dossier.
     """
 
     folder = Path(folder_path)
@@ -32,24 +36,39 @@ def get_frames_from_folder(folder_path, extensions=(".jpg", ".png")):
 
     return sorted(frames)
 
-def export_filtered_frames(frames, output_folder):
-    """Exporte les frames filtrées vers un dossier de sortie spécifié.
+def export_frames_csv(frames, base_folder, csv_path):
+    """Exporte les chemins des frames filtrées vers un fichier CSV.
+
+    Le CSV contient une colonne "frame_path" avec le chemin de chaque frame relatif
+    à base_folder, toujours écrit avec des "/" (ex. : "video_01/frame_0001.jpg").
+    Pour retrouver une frame : base_folder / frame_path.
+
+    Le fichier est créé s'il n'existe pas et remplacé s'il existe déjà.
 
     Args:
         frames (list): Liste des chemins des frames à exporter.
-        output_folder (str or Path): Chemin du dossier de sortie.
+        base_folder (str or Path): Dossier racine des frames.
+        csv_path (str or Path): Chemin du fichier CSV de sortie.
 
     Returns:
-        list: Liste des chemins des frames copiées dans le dossier de sortie.
+        list: Liste des chemins des frames écrites dans le CSV.
+
+    Raises:
+        ValueError: Si une frame ne se trouve pas dans base_folder.
     """
 
-    output_folder = Path(output_folder)
-    output_folder.mkdir(parents=True, exist_ok=True)
+    base_folder = Path(base_folder)
+    csv_path = Path(csv_path)
 
-    frames_copied = []
+    parent_dir = csv_path.parent
+    parent_dir.mkdir(parents=True, exist_ok=True)
 
-    for frame in frames:
-        frame_copied = shutil.copy(frame, output_folder / Path(frame).name)
-        frames_copied.append(Path(frame_copied))
+    with open(csv_path, mode='w', newline='', encoding='utf-8') as csvfile:
+        csv_writer = csv.writer(csvfile)
+        csv_writer.writerow(['frame_path'])
 
-    return frames_copied
+        for frame in frames:
+            relative_path = Path(frame).relative_to(base_folder)
+            csv_writer.writerow([relative_path.as_posix()])
+
+    return frames

@@ -1,10 +1,14 @@
+import csv
+import io
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
 import numpy as np
 import cv2
 
-from pipeline.filter_frame import prepare_frame, validate_frame_quality, calculate_exposure_score, calculate_sharpness_score
+from pipeline.filter_frame import prepare_frame, validate_frame_quality, calculate_exposure_score, calculate_sharpness_score, filter_frames
 from pipeline.filter_frame import EXPOSURE_THRESHOLD_LOW, EXPOSURE_THRESHOLD_HIGH
 
 class TestPrepareFrame(unittest.TestCase):
@@ -256,3 +260,97 @@ class TestValidateFrameQuality(unittest.TestCase):
     def test_validate_frame_quality_with_nonexistent_file(self):
         with self.assertRaises(FileNotFoundError):
             validate_frame_quality(os.path.join(self.temp_dir, "missing.png"))
+
+class TestFilterFrames(unittest.TestCase):
+
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.input_folder = Path(temp_dir.name) / "frames"
+        self.input_folder.mkdir()
+        self.output_folder = Path(temp_dir.name) / "output"
+
+    def write_frame(self, relative_path, sharp=True):
+        # Damier net (gardé) ou image uniforme floue (rejetée)
+        if sharp:
+            img = np.zeros((100, 100), dtype=np.uint8)
+            img[::2, ::2] = 255
+            img[1::2, 1::2] = 255
+        else:
+            img = np.full((100, 100), 128, dtype=np.uint8)
+        path = self.input_folder / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(path), img)
+        return path
+
+    def run_filter_frames(self, csv_path=None):
+        # Retourne le résultat et les messages affichés
+        output = io.StringIO()
+        with redirect_stdout(output):
+            frames = filter_frames(self.input_folder, csv_path)
+        return frames, output.getvalue()
+
+    def read_csv(self, path):
+        with open(path, mode='r', newline='', encoding='utf-8') as csvfile:
+            return list(csv.reader(csvfile))
+
+    def test_filter_frames_without_csv_path(self):
+        good = self.write_frame("good.png")
+
+        frames, output = self.run_filter_frames()
+
+        self.assertEqual(frames, [good])
+        self.assertIn("Aucun CSV exporté", output)
+        self.assertFalse(self.output_folder.exists())
+
+    def test_filter_frames_exports_csv(self):
+        good = self.write_frame("good.png")
+        csv_path = self.output_folder / "frames.csv"
+
+        frames, output = self.run_filter_frames(csv_path)
+
+        self.assertEqual(frames, [good])
+        self.assertIn("CSV exporté", output)
+        self.assertEqual(self.read_csv(csv_path), [["frame_path"], ["good.png"]])
+
+    def test_filter_frames_when_export_fails(self):
+        good = self.write_frame("good.png")
+        self.output_folder.mkdir()
+
+        # csv_path est un dossier : l'écriture échoue
+        frames, output = self.run_filter_frames(self.output_folder)
+
+        self.assertEqual(frames, [good])
+        self.assertIn("Échec de l'export du CSV", output)
+        self.assertTrue(self.output_folder.is_dir())
+
+    def test_filter_frames_ignores_unreadable_frame(self):
+        good = self.write_frame("good.png")
+        (self.input_folder / "invalid.png").write_text("This is not a valid image file.")
+
+        frames, output = self.run_filter_frames()
+
+        self.assertEqual(frames, [good])
+        self.assertIn("Frame ignorée", output)
+
+    def test_filter_frames_keeps_only_good_frames(self):
+        good = self.write_frame("good.png")
+        self.write_frame("blurry.png", sharp=False)
+
+        frames, output = self.run_filter_frames()
+
+        self.assertEqual(frames, [good])
+        self.assertIn("1/2 frames retenues", output)
+
+    def test_filter_frames_with_subfolders(self):
+        good = self.write_frame("video_01/frame_0001.png")
+        csv_path = self.output_folder / "frames.csv"
+
+        frames, _ = self.run_filter_frames(csv_path)
+
+        self.assertEqual(frames, [good])
+        self.assertEqual(self.read_csv(csv_path), [["frame_path"], ["video_01/frame_0001.png"]])
+
+    def test_filter_frames_with_nonexistent_input_folder(self):
+        with self.assertRaises(ValueError):
+            filter_frames(self.input_folder / "missing")

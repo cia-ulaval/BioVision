@@ -2,7 +2,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from pipeline.frame_io import get_frames_from_folder, export_filtered_frames
+from pipeline.frame_io import get_frames_from_folder, export_frames_csv
 
 # Récupération des frames en utilisant un chemin d'accès à un dossier contenant les frames
 PATH_TO_FRAMES = Path(__file__).parent.parent / "data" / "frames" / "caribou_test_all"
@@ -122,12 +122,21 @@ def validate_frame_quality(frame):
 
     return True
 
-def filter_frames(input_folder=PATH_TO_FRAMES, output_folder=None):
-    """Filtre les frames d'un dossier et exporte celles de bonne qualité.
+def filter_frames(input_folder=PATH_TO_FRAMES, csv_path=None):
+    """Filtre les frames d'un dossier (et de ses sous-dossiers) et exporte la liste
+    de celles de bonne qualité dans un CSV.
+
+    Les frames ne sont pas copiées : le CSV contient leurs chemins relatifs à
+    input_folder.
+
+    Un message indique toujours le résultat de l'export : CSV écrit, aucun export
+    demandé (csv_path vaut None) ou échec de l'écriture. En cas d'échec, les frames
+    valides sont quand même retournées.
 
     Args:
-        input_folder (str or Path): Dossier source (par défaut : PATH_TO_FRAMES).
-        output_folder (str or Path, optional): Dossier de sortie. Si None, pas d'export.
+        input_folder: Dossier source (par défaut : PATH_TO_FRAMES).
+        csv_path: Chemin du fichier CSV de sortie.
+            Si None, pas d'export.
 
     Returns:
         list: Chemins des frames valides.
@@ -144,9 +153,16 @@ def filter_frames(input_folder=PATH_TO_FRAMES, output_folder=None):
             # Image corrompue ou illisible : on l'ignore et on continue
             print(f"Frame ignorée : {error}")
 
-    if output_folder is not None:
-        export_filtered_frames(valid_frames, output_folder)
-
     print(f"{len(valid_frames)}/{len(frames)} frames retenues")
+
+    if csv_path is None:
+        print("Aucun CSV exporté : csv_path non fourni")
+    else:
+        try:
+            export_frames_csv(valid_frames, input_folder, csv_path)
+            print(f"CSV exporté : {csv_path}")
+        except OSError as error:
+            # Problème d'écriture
+            print(f"Échec de l'export du CSV : {error}")
 
     return valid_frames
