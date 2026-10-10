@@ -21,9 +21,6 @@ venv/
 notebooks/
 .Trash-0/
 
-# Tests
-tests/
-
 # Suivi d'expériences
 wandb/
 mlruns/
