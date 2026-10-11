@@ -101,7 +101,7 @@ class TestGetFramesFromFolder(unittest.TestCase):
         ])
         self.assertEqual(frames, expected_frames)
 
-HEADER = ["frame_path", "sharpness", "exposure", "result"]
+HEADER = ["frame_path", "sharpness", "darkness", "saturation", "result"]
 
 class TestExportFrameResultsCSV(unittest.TestCase):
     def setUp(self):
@@ -141,7 +141,7 @@ class TestExportFrameResultsCSV(unittest.TestCase):
 
     def make_result(self, frame, result=True):
         # Scores fixes : seul le chemin et la décision varient selon les tests
-        return FrameResult(frame, exposure=120.5, sharpness=80.25, result=result)
+        return FrameResult(frame, darkness=1.5, saturation=12.5, sharpness=80.25, result=result)
 
     def test_export_frame_results_csv(self):
         frame_results = [self.make_result(self.frame1), self.make_result(self.frame2, result=False)]
@@ -151,8 +151,8 @@ class TestExportFrameResultsCSV(unittest.TestCase):
         # Toutes les frames sont écrites, retenues ou non, avec leurs scores
         self.assertEqual(self.read_csv(self.csv_path), [
             HEADER,
-            ["frame1.jpg", "80.25", "120.5", "True"],
-            ["frame2.png", "80.25", "120.5", "False"]
+            ["frame1.jpg", "80.25", "1.5", "12.5", "True"],
+            ["frame2.png", "80.25", "1.5", "12.5", "False"]
         ])
 
         # Vérifier que la fonction retourne les résultats exportés
@@ -166,7 +166,7 @@ class TestExportFrameResultsCSV(unittest.TestCase):
         # Le chemin garde le sous-dossier de la vidéo, toujours avec des "/"
         self.assertEqual(self.read_csv(self.csv_path), [
             HEADER,
-            ["video_01/frame_0001.jpg", "80.25", "120.5", "True"]
+            ["video_01/frame_0001.jpg", "80.25", "1.5", "12.5", "True"]
         ])
 
     def test_export_frame_results_csv_with_same_name_in_two_videos(self):
@@ -198,7 +198,7 @@ class TestExportFrameResultsCSV(unittest.TestCase):
         # L'ancien contenu est remplacé (mode "w")
         self.assertEqual(self.read_csv(self.csv_path), [
             HEADER,
-            ["frame1.jpg", "80.25", "120.5", "True"]
+            ["frame1.jpg", "80.25", "1.5", "12.5", "True"]
         ])
 
     def test_export_frame_results_csv_creates_parent_folder(self):
@@ -211,7 +211,7 @@ class TestExportFrameResultsCSV(unittest.TestCase):
 
         self.assertEqual(self.read_csv(csv_path), [
             HEADER,
-            ["frame1.jpg", "80.25", "120.5", "True"]
+            ["frame1.jpg", "80.25", "1.5", "12.5", "True"]
         ])
 
     def test_export_frame_results_csv_with_str_paths(self):
@@ -244,9 +244,9 @@ class TestReadFrameResultsCSV(unittest.TestCase):
 
         # Une frame retenue et une rejetée, dont une dans un sous-dossier de vidéo
         self.good = FrameResult(self.frames_folder / "video_01" / "frame_0001.jpg",
-                                exposure=120.5, sharpness=80.25, result=True)
+                                darkness=1.5, saturation=12.5, sharpness=80.25, result=True)
         self.bad = FrameResult(self.frames_folder / "frame2.png",
-                               exposure=30.0, sharpness=5.125, result=False)
+                               darkness=30.0, saturation=99.75, sharpness=5.125, result=False)
 
     def tearDown(self):
         # Nettoyer le dossier temporaire après les tests
@@ -274,7 +274,8 @@ class TestReadFrameResultsCSV(unittest.TestCase):
         # Les chaînes du CSV sont reconverties : "False" doit redonner False, pas True
         frame_result = read_frame_results_csv(self.csv_path, self.frames_folder)[0]
         self.assertIs(frame_result.result, False)
-        self.assertIsInstance(frame_result.exposure, float)
+        self.assertIsInstance(frame_result.darkness, float)
+        self.assertIsInstance(frame_result.saturation, float)
         self.assertIsInstance(frame_result.sharpness, float)
         self.assertIsInstance(frame_result.path, Path)
 
@@ -298,3 +299,11 @@ class TestReadFrameResultsCSV(unittest.TestCase):
     def test_read_frame_results_csv_with_nonexistent_file(self):
         with self.assertRaises(FileNotFoundError):
             read_frame_results_csv(self.test_path / "missing.csv", self.frames_folder)
+
+    def test_read_frame_results_csv_without_saturation_column(self):
+        # Un CSV d'une ancienne version du filtre (sans la colonne saturation) est refusé clairement
+        self.csv_path.write_text("frame_path,sharpness,exposure,result\nframe2.png,5.125,30.0,False\n", encoding="utf-8")
+
+        with self.assertRaises(ValueError) as context:
+            read_frame_results_csv(self.csv_path, self.frames_folder)
+        self.assertIn("saturation", str(context.exception))

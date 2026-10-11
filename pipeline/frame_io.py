@@ -8,13 +8,15 @@ class FrameResult:
 
     Attributes:
         path (str or Path): Chemin de la frame.
-        exposure (float): Score d'exposition (luminosité moyenne).
+        darkness (float): Score de noirceur (pourcentage de pixels noirs).
+        saturation (float): Score de saturation (pourcentage de pixels saturés).
         sharpness (float): Score de netteté (variance du Laplacien).
         result (bool): True si la frame est retenue, False sinon.
     """
 
     path: Path
-    exposure: float
+    darkness: float
+    saturation: float
     sharpness: float
     result: bool
 
@@ -53,6 +55,9 @@ def get_frames_from_folder(folder_path, extensions=(".jpg", ".png")):
 
     return sorted(frames)
 
+# Colonnes du CSV des résultats, dans l'ordre d'écriture
+CSV_COLUMNS = ("frame_path", "sharpness", "darkness", "saturation", "result")
+
 def export_frame_results_csv(frame_results, base_folder, csv_path):
     """Exporte les résultats du filtrage de toutes les frames vers un fichier CSV.
 
@@ -60,7 +65,8 @@ def export_frame_results_csv(frame_results, base_folder, csv_path):
         - frame_path : chemin relatif à base_folder, toujours écrit avec des "/"
           (ex. : "video_01/frame_0001.jpg"). Pour retrouver une frame : base_folder / frame_path.
         - sharpness : score de netteté (variance du Laplacien).
-        - exposure : score d'exposition (luminosité moyenne).
+        - darkness : score de noirceur (pourcentage de pixels noirs).
+        - saturation : score de saturation (pourcentage de pixels saturés).
         - result : True si la frame est retenue, False sinon.
 
     Args:
@@ -83,14 +89,15 @@ def export_frame_results_csv(frame_results, base_folder, csv_path):
 
     with open(csv_path, mode='w', newline='', encoding='utf-8') as csvfile:
         csv_writer = csv.writer(csvfile)
-        csv_writer.writerow(['frame_path', 'sharpness', 'exposure', 'result'])
+        csv_writer.writerow(CSV_COLUMNS)
 
         for frame_result in frame_results:
             relative_path = Path(frame_result.path).relative_to(base_folder)
             csv_writer.writerow([
                 relative_path.as_posix(),
                 frame_result.sharpness,
-                frame_result.exposure,
+                frame_result.darkness,
+                frame_result.saturation,
                 frame_result.result
             ])
 
@@ -113,6 +120,7 @@ def read_frame_results_csv(csv_path, base_folder, filter_mode="all"):
 
     Raises:
         ValueError: Si filter_mode n'est pas une valeur de FILTER_MODES.
+        ValueError: Si une colonne de CSV_COLUMNS manque (CSV d'une ancienne version du filtre).
         FileNotFoundError: Si le CSV n'existe pas.
     """
 
@@ -124,7 +132,17 @@ def read_frame_results_csv(csv_path, base_folder, filter_mode="all"):
 
     frame_results = []
     with open(csv_path, mode='r', newline='', encoding='utf-8') as csvfile:
-        for row in csv.DictReader(csvfile):
+        reader = csv.DictReader(csvfile)
+
+        # Vérifie que le CSV contient toutes les colonnes attendues
+        missing_columns = [column for column in CSV_COLUMNS if column not in (reader.fieldnames or [])]
+        if missing_columns:
+            raise ValueError(
+                f"Colonnes manquantes dans {csv_path} : {missing_columns}. "
+                "Ce CSV vient probablement d'une ancienne version du filtre : relancer filter_frames pour le régénérer."
+            )
+
+        for row in reader:
             # Lit le résultat de la frame
             result = row["result"] == "True"
 
@@ -134,7 +152,8 @@ def read_frame_results_csv(csv_path, base_folder, filter_mode="all"):
 
             frame_results.append(FrameResult(
                 path=base_folder / row["frame_path"],
-                exposure=float(row["exposure"]),
+                darkness=float(row["darkness"]),
+                saturation=float(row["saturation"]),
                 sharpness=float(row["sharpness"]),
                 result=result
             ))

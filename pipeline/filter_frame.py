@@ -47,9 +47,15 @@ def prepare_frame(frame):
 # Flou : variance laplacien en dessous de ce seuil est considéré comme flou
 SHARPNESS_THRESHOLD = 40.0
 
-# Exposition : luminosité moyenne en dehors de ce seuil est considérée comme sous-exposée ou surexposée
-EXPOSURE_THRESHOLD_LOW = 55.0
-EXPOSURE_THRESHOLD_HIGH = 160.0
+# Un pixel jusqu'à ce niveau de gris est considéré comme noir (les caméras descendent vers 2-3, pas 0)
+DARK_PIXEL_THRESHOLD = 10
+# Une frame dont le pourcentage de pixels noirs dépasse ce seuil est considérée comme sous-exposée
+DARK_PERCENT_THRESHOLD = 25.0
+
+# Un pixel à partir de ce niveau de gris est considéré comme saturé (les caméras plafonnent vers 246, pas 255)
+SATURATED_PIXEL_THRESHOLD = 240
+# Une frame dont le pourcentage de pixels saturés dépasse ce seuil est considérée comme surexposée
+SATURATED_PERCENT_THRESHOLD = 25.0
 
 def calculate_sharpness_score(gray_img):
     """Calcule le score de netteté d'une image en niveaux de gris en utilisant la variance du Laplacien.
@@ -75,8 +81,8 @@ def calculate_sharpness_score(gray_img):
     laplacian_var = float(cv2.Laplacian(gray_img, cv2.CV_64F).var())
     return laplacian_var
 
-def calculate_exposure_score(gray_img):
-    """Calcule le score d'exposition d'une image en niveaux de gris en utilisant la luminosité moyenne entre les seuils (EXPOSURE_THRESHOLD_LOW, EXPOSURE_THRESHOLD_HIGH).
+def calculate_darkness_score(gray_img):
+    """Calcule le pourcentage de pixels noirs (<= DARK_PIXEL_THRESHOLD) d'une image en niveaux de gris, comparé à DARK_PERCENT_THRESHOLD.
 
     Args:
         gray_img (np.ndarray): Image en niveaux de gris.
@@ -85,8 +91,8 @@ def calculate_exposure_score(gray_img):
         ValueError: Si l'image n'est pas en niveaux de gris (2 dimensions).
         ValueError: Si l'image est None.
 
-    Returns:    
-        float: Score d'exposition (luminosité moyenne).
+    Returns:
+        float: Score de noirceur (pourcentage de pixels noirs, entre 0 et 100).
     """
 
     if gray_img is None:
@@ -95,37 +101,62 @@ def calculate_exposure_score(gray_img):
     if gray_img.ndim != 2:
         raise ValueError("L'image doit être en niveaux de gris (2 dimensions).")
 
-    return float(np.mean(gray_img))
+    dark_pixels = np.count_nonzero(gray_img <= DARK_PIXEL_THRESHOLD)
+    return float(100 * dark_pixels / gray_img.size)
+
+def calculate_saturation_score(gray_img):
+    """Calcule le pourcentage de pixels saturés (>= SATURATED_PIXEL_THRESHOLD) d'une image en niveaux de gris, comparé à SATURATED_PERCENT_THRESHOLD.
+
+    Args:
+        gray_img (np.ndarray): Image en niveaux de gris.
+
+    Raises:
+        ValueError: Si l'image n'est pas en niveaux de gris (2 dimensions).
+        ValueError: Si l'image est None.
+
+    Returns:
+        float: Score de saturation (pourcentage de pixels saturés, entre 0 et 100).
+    """
+
+    if gray_img is None:
+        raise ValueError("L'image ne peut pas être None.")
+
+    if gray_img.ndim != 2:
+        raise ValueError("L'image doit être en niveaux de gris (2 dimensions).")
+
+    saturated_pixels = np.count_nonzero(gray_img >= SATURATED_PIXEL_THRESHOLD)
+    return float(100 * saturated_pixels / gray_img.size)
 
 def validate_frame_quality(frame):
-    """Valide la qualité d'une frame en vérifiant son exposition et sa netteté.
+    """Valide la qualité d'une frame en vérifiant sa noirceur, sa saturation et sa netteté.
 
     Args:
         frame (str or Path): Chemin de la frame à valider.
 
     Returns:
-        tuple: (exposure, sharpness, result) où exposure et sharpness sont les scores
-            calculés et result vaut True si la frame est de bonne qualité, False sinon.
+        FrameResult: Chemin de la frame, scores calculés (darkness, saturation, sharpness)
+            et result qui vaut True si la frame est de bonne qualité, False sinon.
     """
 
     gray_img = prepare_frame(frame)
-    exposure = calculate_exposure_score(gray_img)
+    darkness = calculate_darkness_score(gray_img)
+    saturation = calculate_saturation_score(gray_img)
     sharpness = calculate_sharpness_score(gray_img)
 
-    if exposure < EXPOSURE_THRESHOLD_LOW or exposure > EXPOSURE_THRESHOLD_HIGH:
-        return exposure, sharpness, False
+    result = (
+        darkness <= DARK_PERCENT_THRESHOLD
+        and saturation <= SATURATED_PERCENT_THRESHOLD
+        and sharpness >= SHARPNESS_THRESHOLD
+    )
 
-    if sharpness < SHARPNESS_THRESHOLD:
-        return exposure, sharpness, False
-
-    return exposure, sharpness, True
+    return FrameResult(path=frame, darkness=darkness, saturation=saturation, sharpness=sharpness, result=result)
 
 def filter_frames(input_folder=PATH_TO_FRAMES, csv_path=None):
     """Filtre les frames d'un dossier (et de ses sous-dossiers) et exporte les
     résultats de toutes les frames dans un CSV.
 
     Les frames ne sont pas copiées : le CSV contient leurs chemins relatifs à
-    input_folder, leurs scores de netteté et d'exposition, et la décision.
+    input_folder, leurs scores de netteté, de noirceur et de saturation, et la décision.
 
     Un message indique toujours le résultat de l'export : CSV écrit, aucun export
     demandé (csv_path vaut None) ou échec de l'écriture. En cas d'échec, les frames
@@ -145,8 +176,7 @@ def filter_frames(input_folder=PATH_TO_FRAMES, csv_path=None):
     frame_results = []
     for frame in frames:
         try:
-            exposure, sharpness, result = validate_frame_quality(frame)
-            frame_results.append(FrameResult(frame, exposure, sharpness, result))
+            frame_results.append(validate_frame_quality(frame))
         except FileNotFoundError as error:
             # Image corrompue ou illisible : on l'ignore et on continue
             print(f"Frame ignorée : {error}")

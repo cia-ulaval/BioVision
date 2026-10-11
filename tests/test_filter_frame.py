@@ -8,8 +8,9 @@ from pathlib import Path
 import numpy as np
 import cv2
 
-from pipeline.filter_frame import prepare_frame, validate_frame_quality, calculate_exposure_score, calculate_sharpness_score, filter_frames
-from pipeline.filter_frame import EXPOSURE_THRESHOLD_LOW, EXPOSURE_THRESHOLD_HIGH
+from pipeline.filter_frame import prepare_frame, validate_frame_quality, calculate_darkness_score, calculate_sharpness_score, calculate_saturation_score, filter_frames
+from pipeline.filter_frame import DARK_PIXEL_THRESHOLD, DARK_PERCENT_THRESHOLD, SATURATED_PIXEL_THRESHOLD, SATURATED_PERCENT_THRESHOLD
+from pipeline.frame_io import FrameResult
 
 class TestPrepareFrame(unittest.TestCase):
 
@@ -151,41 +152,95 @@ class TestCalculateSharpnessScore(unittest.TestCase):
         with self.assertRaises(ValueError):
             calculate_sharpness_score(None)
 
-class TestCalculateExposureScore(unittest.TestCase):
+class TestCalculateDarknessScore(unittest.TestCase):
 
-    def test_exposure_score_with_uniform_image(self):
-        # Une image uniforme (tous les pixels ont la même valeur) doit avoir un score d'exposition égal à la valeur des pixels
-        uniform_img = np.full((100, 100), 128, dtype=np.uint8)
-        score = calculate_exposure_score(uniform_img)
-        self.assertIsInstance(score, float)
-        self.assertEqual(score, 128.0)
-
-    def test_exposure_score_with_black_image(self):
-        # Une image noire doit avoir le score minimal (0)
+    def test_darkness_score_with_black_image(self):
+        # Une image noire a tous ses pixels noirs
         black_img = np.zeros((100, 100), dtype=np.uint8)
-        self.assertEqual(calculate_exposure_score(black_img), 0.0)
+        score = calculate_darkness_score(black_img)
+        self.assertIsInstance(score, float)
+        self.assertEqual(score, 100.0)
 
-    def test_exposure_score_with_white_image(self):
-        # Une image blanche doit avoir le score maximal (255)
+    def test_darkness_score_with_white_image(self):
+        # Une image blanche n'a aucun pixel noir
         white_img = np.full((100, 100), 255, dtype=np.uint8)
-        self.assertEqual(calculate_exposure_score(white_img), 255.0)
+        self.assertEqual(calculate_darkness_score(white_img), 0.0)
 
-    def test_exposure_score_with_half_black_half_white_image(self):
-        # Moitié noire (0), moitié blanche (255) : la moyenne doit être 127.5
+    def test_darkness_score_with_half_black_half_white_image(self):
+        # Moitié noire, moitié blanche : 50 % de pixels noirs
         img = np.zeros((100, 100), dtype=np.uint8)
         img[:, 50:] = 255
-        self.assertEqual(calculate_exposure_score(img), 127.5)
+        self.assertEqual(calculate_darkness_score(img), 50.0)
 
-    def test_exposure_score_with_color_image(self):
+    def test_darkness_score_at_pixel_threshold(self):
+        # Un pixel au seuil est noir (<=), un pixel juste au-dessus ne l'est pas
+        at_threshold = np.full((100, 100), DARK_PIXEL_THRESHOLD, dtype=np.uint8)
+        above_threshold = np.full((100, 100), DARK_PIXEL_THRESHOLD + 1, dtype=np.uint8)
+        self.assertEqual(calculate_darkness_score(at_threshold), 100.0)
+        self.assertEqual(calculate_darkness_score(above_threshold), 0.0)
+
+    def test_darkness_score_with_dark_image_without_black_pixels(self):
+        # Une image sombre (moyenne 45, comme une forêt dense) mais sans pixel noir a un score de 0
+        img = np.full((100, 100), 15, dtype=np.uint8)
+        img[:, 50:] = 75
+        self.assertEqual(img.mean(), 45.0)
+        self.assertEqual(calculate_darkness_score(img), 0.0)
+
+    def test_darkness_score_with_color_image(self):
         # Tester que la fonction lève une exception pour une image couleur
         color_img = np.zeros((100, 100, 3), dtype=np.uint8)
         with self.assertRaises(ValueError):
-            calculate_exposure_score(color_img)
+            calculate_darkness_score(color_img)
 
-    def test_exposure_score_with_none_image(self):
+    def test_darkness_score_with_none_image(self):
         # Tester que la fonction lève une exception pour une image None
         with self.assertRaises(ValueError):
-            calculate_exposure_score(None)
+            calculate_darkness_score(None)
+
+class TestCalculateSaturationScore(unittest.TestCase):
+
+    def test_saturation_score_with_black_image(self):
+        # Une image noire n'a aucun pixel saturé
+        black_img = np.zeros((100, 100), dtype=np.uint8)
+        score = calculate_saturation_score(black_img)
+        self.assertIsInstance(score, float)
+        self.assertEqual(score, 0.0)
+
+    def test_saturation_score_with_white_image(self):
+        # Une image blanche a tous ses pixels saturés
+        white_img = np.full((100, 100), 255, dtype=np.uint8)
+        self.assertEqual(calculate_saturation_score(white_img), 100.0)
+
+    def test_saturation_score_with_half_black_half_white_image(self):
+        # Moitié noire, moitié blanche : 50 % de pixels saturés
+        img = np.zeros((100, 100), dtype=np.uint8)
+        img[:, 50:] = 255
+        self.assertEqual(calculate_saturation_score(img), 50.0)
+
+    def test_saturation_score_at_pixel_threshold(self):
+        # Un pixel au seuil est saturé (>=), un pixel juste en dessous ne l'est pas
+        at_threshold = np.full((100, 100), SATURATED_PIXEL_THRESHOLD, dtype=np.uint8)
+        below_threshold = np.full((100, 100), SATURATED_PIXEL_THRESHOLD - 1, dtype=np.uint8)
+        self.assertEqual(calculate_saturation_score(at_threshold), 100.0)
+        self.assertEqual(calculate_saturation_score(below_threshold), 0.0)
+
+    def test_saturation_score_with_bright_image_without_saturated_pixels(self):
+        # Une image claire (moyenne 200, comme la neige) mais sans pixel saturé a un score de 0
+        img = np.full((100, 100), 170, dtype=np.uint8)
+        img[:, 50:] = 230
+        self.assertEqual(img.mean(), 200.0)
+        self.assertEqual(calculate_saturation_score(img), 0.0)
+
+    def test_saturation_score_with_color_image(self):
+        # Tester que la fonction lève une exception pour une image couleur
+        color_img = np.zeros((100, 100, 3), dtype=np.uint8)
+        with self.assertRaises(ValueError):
+            calculate_saturation_score(color_img)
+
+    def test_saturation_score_with_none_image(self):
+        # Tester que la fonction lève une exception pour une image None
+        with self.assertRaises(ValueError):
+            calculate_saturation_score(None)
 
 class TestValidateFrameQuality(unittest.TestCase):
 
@@ -208,54 +263,86 @@ class TestValidateFrameQuality(unittest.TestCase):
         img[1::2, 1::2] = high
         return img
 
-    def make_checkerboard_with_mean(self, mean):
-        # Damier net dont la moyenne vaut exactement `mean` (contraste maximal possible)
-        high = min(255, int(2 * mean))
-        low = int(2 * mean) - high
-        return self.make_checkerboard(low, high)
+    def make_checkerboard_with_filled_rows(self, percent, value):
+        # Damier net sans pixel noir ni saturé (100/200), dont les `percent` premières lignes
+        # sur 100 valent `value` : 0 pour des pixels noirs, 255 pour des pixels saturés.
+        # Le pourcentage de pixels noirs ou saturés vaut donc exactement `percent`
+        img = self.make_checkerboard(100, 200)
+        img[:percent, :] = value
+        return img
 
     def test_validate_frame_quality_with_good_image(self):
-        # Nette (damier) et bien exposée (moyenne 127.5)
-        path = self.write_image(self.make_checkerboard(0, 255))
-        self.assertTrue(validate_frame_quality(path)[2])
+        # Nette (damier), sans pixel noir ni saturé
+        path = self.write_image(self.make_checkerboard(50, 200))
+        self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_with_blurry_image(self):
-        # Bien exposée (moyenne 128) mais floue (aucun contour, netteté 0)
+        # Bien exposée (gris 128) mais floue (aucun contour, netteté 0)
         path = self.write_image(np.full((100, 100), 128, dtype=np.uint8))
-        self.assertFalse(validate_frame_quality(path)[2])
+        self.assertFalse(validate_frame_quality(path).result)
 
-    def test_validate_frame_quality_returns_scores(self):
-        # Les scores sont retournés même si la frame est rejetée (ici floue)
+    def test_validate_frame_quality_returns_frame_result(self):
+        # Un FrameResult avec tous les scores est retourné même si la frame est rejetée (ici floue)
         path = self.write_image(np.full((100, 100), 128, dtype=np.uint8))
-        exposure, sharpness, result = validate_frame_quality(path)
-        self.assertEqual(exposure, 128.0)
-        self.assertEqual(sharpness, 0.0)
-        self.assertFalse(result)
+        frame_result = validate_frame_quality(path)
+        self.assertIsInstance(frame_result, FrameResult)
+        self.assertEqual(frame_result.path, path)
+        self.assertEqual(frame_result.darkness, 0.0)
+        self.assertEqual(frame_result.saturation, 0.0)
+        self.assertEqual(frame_result.sharpness, 0.0)
+        self.assertFalse(frame_result.result)
 
     def test_validate_frame_quality_with_underexposed_image(self):
-        # Nette mais trop sombre (moyenne 10 sous le seuil bas)
-        path = self.write_image(self.make_checkerboard_with_mean(EXPOSURE_THRESHOLD_LOW - 10))
-        self.assertFalse(validate_frame_quality(path)[2])
+        # Nette mais sous-exposée (10 points de pourcentage de pixels noirs au-dessus du seuil)
+        path = self.write_image(self.make_checkerboard_with_filled_rows(int(DARK_PERCENT_THRESHOLD) + 10, 0))
+        self.assertFalse(validate_frame_quality(path).result)
+
+    def test_validate_frame_quality_at_darkness_threshold(self):
+        # Exactement au seuil : gardée (on rejette strictement au-dessus)
+        path = self.write_image(self.make_checkerboard_with_filled_rows(int(DARK_PERCENT_THRESHOLD), 0))
+        self.assertTrue(validate_frame_quality(path).result)
+
+    def test_validate_frame_quality_just_above_darkness_threshold(self):
+        # 1 point de pourcentage au-dessus du seuil : rejetée
+        path = self.write_image(self.make_checkerboard_with_filled_rows(int(DARK_PERCENT_THRESHOLD) + 1, 0))
+        self.assertFalse(validate_frame_quality(path).result)
+
+    def test_validate_frame_quality_with_dark_forest_like_image(self):
+        # Scène sombre comme une forêt dense : moyenne 45 (rejetée par l'ancien seuil de moyenne à 55),
+        # mais nette et sans pixel noir, donc gardée
+        img = self.make_checkerboard(15, 75)
+        self.assertEqual(img.mean(), 45.0)
+        path = self.write_image(img)
+        self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_with_overexposed_image(self):
-        # Nette mais trop claire (moyenne 10 au-dessus du seuil haut)
-        path = self.write_image(self.make_checkerboard_with_mean(EXPOSURE_THRESHOLD_HIGH + 10))
-        self.assertFalse(validate_frame_quality(path)[2])
+        # Nette mais surexposée (10 points de pourcentage de pixels saturés au-dessus du seuil)
+        path = self.write_image(self.make_checkerboard_with_filled_rows(int(SATURATED_PERCENT_THRESHOLD) + 10, 255))
+        self.assertFalse(validate_frame_quality(path).result)
 
-    def test_validate_frame_quality_at_exposure_thresholds(self):
-        # Les seuils eux-mêmes sont acceptés (comparaisons strictes < et >)
-        for mean in (EXPOSURE_THRESHOLD_LOW, EXPOSURE_THRESHOLD_HIGH):
-            with self.subTest(mean=mean):
-                img = self.make_checkerboard_with_mean(mean)
-                self.assertEqual(calculate_exposure_score(img), mean)
-                path = self.write_image(img)
-                self.assertTrue(validate_frame_quality(path)[2])
+    def test_validate_frame_quality_at_saturation_threshold(self):
+        # Exactement au seuil : gardée (on rejette strictement au-dessus)
+        path = self.write_image(self.make_checkerboard_with_filled_rows(int(SATURATED_PERCENT_THRESHOLD), 255))
+        self.assertTrue(validate_frame_quality(path).result)
+
+    def test_validate_frame_quality_just_above_saturation_threshold(self):
+        # 1 point de pourcentage au-dessus du seuil : rejetée
+        path = self.write_image(self.make_checkerboard_with_filled_rows(int(SATURATED_PERCENT_THRESHOLD) + 1, 255))
+        self.assertFalse(validate_frame_quality(path).result)
+
+    def test_validate_frame_quality_with_bright_snow_like_image(self):
+        # Scène claire comme la neige : moyenne 200 (rejetée par l'ancien seuil de moyenne à 160),
+        # mais nette et sans pixel saturé, donc gardée
+        img = self.make_checkerboard(170, 230)
+        self.assertEqual(img.mean(), 200.0)
+        path = self.write_image(img)
+        self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_with_color_image(self):
         # Une image couleur est convertie en niveaux de gris : c'est une entrée valide
-        color_img = cv2.cvtColor(self.make_checkerboard(0, 255), cv2.COLOR_GRAY2BGR)
+        color_img = cv2.cvtColor(self.make_checkerboard(50, 200), cv2.COLOR_GRAY2BGR)
         path = self.write_image(color_img)
-        self.assertTrue(validate_frame_quality(path)[2])
+        self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_with_unreadable_file(self):
         # Un fichier qui n'est pas une image fait lever l'exception de prepare_frame
@@ -278,12 +365,14 @@ class TestFilterFrames(unittest.TestCase):
         self.input_folder.mkdir()
         self.output_folder = Path(temp_dir.name) / "output"
 
-    def write_frame(self, relative_path, sharp=True):
-        # Damier net (gardé) ou image uniforme floue (rejetée)
+    def write_frame(self, relative_path, sharp=True, saturated_percent=0):
+        # Damier net sans pixel noir ni saturé (gardé) ou image uniforme floue (rejetée).
+        # saturated_percent : nombre de lignes blanches sur 100, donc pourcentage de pixels saturés
         if sharp:
-            img = np.zeros((100, 100), dtype=np.uint8)
-            img[::2, ::2] = 255
-            img[1::2, 1::2] = 255
+            img = np.full((100, 100), 50, dtype=np.uint8)
+            img[::2, ::2] = 200
+            img[1::2, 1::2] = 200
+            img[:saturated_percent, :] = 255
         else:
             img = np.full((100, 100), 128, dtype=np.uint8)
         path = self.input_folder / relative_path
@@ -359,10 +448,24 @@ class TestFilterFrames(unittest.TestCase):
 
         # La frame floue n'est pas retournée, mais elle est dans le CSV avec ses scores
         rows = self.read_csv(csv_path)
-        self.assertEqual(rows[0], ["frame_path", "sharpness", "exposure", "result"])
-        self.assertEqual(rows[1], ["blurry.png", "0.0", "128.0", "False"])
+        self.assertEqual(rows[0], ["frame_path", "sharpness", "darkness", "saturation", "result"])
+        self.assertEqual(rows[1], ["blurry.png", "0.0", "0.0", "0.0", "False"])
         self.assertEqual([row[0] for row in rows[1:]], ["blurry.png", "good.png"])
-        self.assertEqual([row[3] for row in rows[1:]], ["False", "True"])
+        self.assertEqual([row[4] for row in rows[1:]], ["False", "True"])
+        self.assertEqual(len(frames), 1)
+
+    def test_filter_frames_csv_shows_saturation_of_overexposed_frame(self):
+        self.write_frame("good.png")
+        self.write_frame("overexposed.png", saturated_percent=40)
+        csv_path = self.output_folder / "frames.csv"
+
+        frames, _ = self.run_filter_frames(csv_path)
+
+        # La frame surexposée est rejetée, et le CSV montre pourquoi : 40 % de pixels saturés
+        rows = self.read_csv(csv_path)
+        self.assertEqual([row[0] for row in rows[1:]], ["good.png", "overexposed.png"])
+        self.assertEqual([row[3] for row in rows[1:]], ["0.0", "40.0"])
+        self.assertEqual([row[4] for row in rows[1:]], ["True", "False"])
         self.assertEqual(len(frames), 1)
 
     def test_filter_frames_with_subfolders(self):
