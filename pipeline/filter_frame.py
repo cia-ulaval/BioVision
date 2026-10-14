@@ -5,7 +5,10 @@ import numpy as np
 from pipeline.frame_io import get_frames_from_folder, export_frame_results_csv, FrameResult
 
 # Récupération des frames en utilisant un chemin d'accès à un dossier contenant les frames
-PATH_TO_FRAMES = Path(__file__).parent.parent / "data" / "frames" / "caribou_test_all"
+PATH_TO_FRAMES = Path(__file__).parent.parent / "data" / "frames" / "caribou"
+
+# Chemin pour le csv des résultats
+PATH_TO_CSV = Path(__file__).parent.parent / "data" / "results" / "result.csv"
 
 # Taille maximale du côté pour le redimensionnement des frames
 MAX_SIDE = 640  
@@ -151,7 +154,7 @@ def validate_frame_quality(frame):
 
     return FrameResult(path=frame, darkness=darkness, saturation=saturation, sharpness=sharpness, result=result)
 
-def filter_frames(input_folder=PATH_TO_FRAMES, csv_path=None):
+def filter_frames(input_folder=PATH_TO_FRAMES, csv_path=PATH_TO_CSV):
     """Filtre les frames d'un dossier (et de ses sous-dossiers) et exporte les
     résultats de toutes les frames dans un CSV.
 
@@ -164,7 +167,7 @@ def filter_frames(input_folder=PATH_TO_FRAMES, csv_path=None):
 
     Args:
         input_folder: Dossier source (par défaut : PATH_TO_FRAMES).
-        csv_path: Chemin du fichier CSV de sortie.
+        csv_path: Chemin du fichier CSV de sortie (par défaut : PATH_TO_CSV).
             Si None, pas d'export.
 
     Returns:
