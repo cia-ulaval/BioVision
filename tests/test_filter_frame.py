@@ -263,13 +263,20 @@ class TestValidateFrameQuality(unittest.TestCase):
         img[1::2, 1::2] = high
         return img
 
-    def make_checkerboard_with_filled_rows(self, percent, value):
-        # Damier net sans pixel noir ni saturé (100/200), dont les `percent` premières lignes
-        # sur 100 valent `value` : 0 pour des pixels noirs, 255 pour des pixels saturés.
-        # Le pourcentage de pixels noirs ou saturés vaut donc exactement `percent`
-        img = self.make_checkerboard(100, 200)
+    def make_flat_with_filled_rows(self, percent, base, value):
+        # Aplat sans texture valant `base`, dont les `percent` premières lignes sur 100 valent `value`.
+        # base et value ne diffèrent que de 1 : la frontière ne crée presque pas de texture
+        img = np.full((100, 100), base, dtype=np.uint8)
         img[:percent, :] = value
         return img
+
+    def make_flat_dark(self, percent):
+        # Aplat dont exactement `percent` % des pixels sont noirs
+        return self.make_flat_with_filled_rows(percent, DARK_PIXEL_THRESHOLD + 1, DARK_PIXEL_THRESHOLD)
+
+    def make_flat_saturated(self, percent):
+        # Aplat dont exactement `percent` % des pixels sont saturés
+        return self.make_flat_with_filled_rows(percent, SATURATED_PIXEL_THRESHOLD - 1, SATURATED_PIXEL_THRESHOLD)
 
     def test_validate_frame_quality_with_good_image(self):
         # Nette (damier), sans pixel noir ni saturé
@@ -277,12 +284,12 @@ class TestValidateFrameQuality(unittest.TestCase):
         self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_with_blurry_image(self):
-        # Bien exposée (gris 128) mais floue (aucun contour, netteté 0)
+        # Bien exposée (gris 128) mais floue (aucun contour, netteté 0) : gardée, le flou seul ne rejette jamais
         path = self.write_image(np.full((100, 100), 128, dtype=np.uint8))
-        self.assertFalse(validate_frame_quality(path).result)
+        self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_returns_frame_result(self):
-        # Un FrameResult avec tous les scores est retourné même si la frame est rejetée (ici floue)
+        # Un FrameResult avec tous les scores est retourné
         path = self.write_image(np.full((100, 100), 128, dtype=np.uint8))
         frame_result = validate_frame_quality(path)
         self.assertIsInstance(frame_result, FrameResult)
@@ -290,22 +297,32 @@ class TestValidateFrameQuality(unittest.TestCase):
         self.assertEqual(frame_result.darkness, 0.0)
         self.assertEqual(frame_result.saturation, 0.0)
         self.assertEqual(frame_result.sharpness, 0.0)
-        self.assertFalse(frame_result.result)
+        self.assertTrue(frame_result.result)
 
     def test_validate_frame_quality_with_underexposed_image(self):
-        # Nette mais sous-exposée (10 points de pourcentage de pixels noirs au-dessus du seuil)
-        path = self.write_image(self.make_checkerboard_with_filled_rows(int(DARK_PERCENT_THRESHOLD) + 10, 0))
+        # Sans texture et sous-exposée (10 points de pourcentage de pixels noirs au-dessus du seuil)
+        path = self.write_image(self.make_flat_dark(int(DARK_PERCENT_THRESHOLD) + 10))
         self.assertFalse(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_at_darkness_threshold(self):
         # Exactement au seuil : gardée (on rejette strictement au-dessus)
-        path = self.write_image(self.make_checkerboard_with_filled_rows(int(DARK_PERCENT_THRESHOLD), 0))
+        path = self.write_image(self.make_flat_dark(int(DARK_PERCENT_THRESHOLD)))
         self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_just_above_darkness_threshold(self):
         # 1 point de pourcentage au-dessus du seuil : rejetée
-        path = self.write_image(self.make_checkerboard_with_filled_rows(int(DARK_PERCENT_THRESHOLD) + 1, 0))
+        path = self.write_image(self.make_flat_dark(int(DARK_PERCENT_THRESHOLD) + 1))
         self.assertFalse(validate_frame_quality(path).result)
+
+    def test_validate_frame_quality_with_black_image(self):
+        # Entièrement noire et sans texture : rejetée
+        path = self.write_image(np.full((100, 100), 5, dtype=np.uint8))
+        self.assertFalse(validate_frame_quality(path).result)
+
+    def test_validate_frame_quality_with_dark_textured_image(self):
+        # 50 % de pixels noirs, mais texturée : gardée
+        path = self.write_image(self.make_checkerboard(0, 40))
+        self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_with_dark_forest_like_image(self):
         # Scène sombre comme une forêt dense : moyenne 45 (rejetée par l'ancien seuil de moyenne à 55),
@@ -316,19 +333,29 @@ class TestValidateFrameQuality(unittest.TestCase):
         self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_with_overexposed_image(self):
-        # Nette mais surexposée (10 points de pourcentage de pixels saturés au-dessus du seuil)
-        path = self.write_image(self.make_checkerboard_with_filled_rows(int(SATURATED_PERCENT_THRESHOLD) + 10, 255))
+        # Sans texture et surexposée (10 points de pourcentage de pixels saturés au-dessus du seuil)
+        path = self.write_image(self.make_flat_saturated(int(SATURATED_PERCENT_THRESHOLD) + 10))
         self.assertFalse(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_at_saturation_threshold(self):
         # Exactement au seuil : gardée (on rejette strictement au-dessus)
-        path = self.write_image(self.make_checkerboard_with_filled_rows(int(SATURATED_PERCENT_THRESHOLD), 255))
+        path = self.write_image(self.make_flat_saturated(int(SATURATED_PERCENT_THRESHOLD)))
         self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_just_above_saturation_threshold(self):
         # 1 point de pourcentage au-dessus du seuil : rejetée
-        path = self.write_image(self.make_checkerboard_with_filled_rows(int(SATURATED_PERCENT_THRESHOLD) + 1, 255))
+        path = self.write_image(self.make_flat_saturated(int(SATURATED_PERCENT_THRESHOLD) + 1))
         self.assertFalse(validate_frame_quality(path).result)
+
+    def test_validate_frame_quality_with_burned_image(self):
+        # Entièrement brûlée et sans texture : rejetée
+        path = self.write_image(np.full((100, 100), 250, dtype=np.uint8))
+        self.assertFalse(validate_frame_quality(path).result)
+
+    def test_validate_frame_quality_with_saturated_textured_image(self):
+        # Neige au soleil : 100 % de pixels saturés, mais texturée, donc gardée
+        path = self.write_image(self.make_checkerboard(240, 255))
+        self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_with_bright_snow_like_image(self):
         # Scène claire comme la neige : moyenne 200 (rejetée par l'ancien seuil de moyenne à 160),
@@ -365,16 +392,16 @@ class TestFilterFrames(unittest.TestCase):
         self.input_folder.mkdir()
         self.output_folder = Path(temp_dir.name) / "output"
 
-    def write_frame(self, relative_path, sharp=True, saturated_percent=0):
-        # Damier net sans pixel noir ni saturé (gardé) ou image uniforme floue (rejetée).
-        # saturated_percent : nombre de lignes blanches sur 100, donc pourcentage de pixels saturés
-        if sharp:
+    def write_frame(self, relative_path, textured=True, saturated_percent=0):
+        # Damier texturé (toujours gardé) ou aplat sans texture juste sous le seuil de saturation.
+        # saturated_percent : nombre de lignes saturées sur 100, donc pourcentage de pixels saturés
+        if textured:
             img = np.full((100, 100), 50, dtype=np.uint8)
             img[::2, ::2] = 200
             img[1::2, 1::2] = 200
-            img[:saturated_percent, :] = 255
         else:
-            img = np.full((100, 100), 128, dtype=np.uint8)
+            img = np.full((100, 100), SATURATED_PIXEL_THRESHOLD - 1, dtype=np.uint8)
+        img[:saturated_percent, :] = SATURATED_PIXEL_THRESHOLD
         path = self.input_folder / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(path), img)
@@ -432,7 +459,7 @@ class TestFilterFrames(unittest.TestCase):
 
     def test_filter_frames_keeps_only_good_frames(self):
         good = self.write_frame("good.png")
-        self.write_frame("blurry.png", sharp=False)
+        self.write_frame("burned.png", textured=False, saturated_percent=100)
 
         frames, output = self.run_filter_frames()
 
@@ -440,23 +467,23 @@ class TestFilterFrames(unittest.TestCase):
         self.assertIn("1/2 frames retenues", output)
 
     def test_filter_frames_csv_contains_rejected_frames(self):
-        self.write_frame("blurry.png", sharp=False)
+        self.write_frame("burned.png", textured=False, saturated_percent=100)
         self.write_frame("good.png")
         csv_path = self.output_folder / "frames.csv"
 
         frames, _ = self.run_filter_frames(csv_path)
 
-        # La frame floue n'est pas retournée, mais elle est dans le CSV avec ses scores
+        # La frame brûlée n'est pas retournée, mais elle est dans le CSV avec ses scores
         rows = self.read_csv(csv_path)
         self.assertEqual(rows[0], ["frame_path", "sharpness", "darkness", "saturation", "result"])
-        self.assertEqual(rows[1], ["blurry.png", "0.0", "0.0", "0.0", "False"])
-        self.assertEqual([row[0] for row in rows[1:]], ["blurry.png", "good.png"])
+        self.assertEqual(rows[1], ["burned.png", "0.0", "0.0", "100.0", "False"])
+        self.assertEqual([row[0] for row in rows[1:]], ["burned.png", "good.png"])
         self.assertEqual([row[4] for row in rows[1:]], ["False", "True"])
         self.assertEqual(len(frames), 1)
 
     def test_filter_frames_csv_shows_saturation_of_overexposed_frame(self):
         self.write_frame("good.png")
-        self.write_frame("overexposed.png", saturated_percent=40)
+        self.write_frame("overexposed.png", textured=False, saturated_percent=40)
         csv_path = self.output_folder / "frames.csv"
 
         frames, _ = self.run_filter_frames(csv_path)

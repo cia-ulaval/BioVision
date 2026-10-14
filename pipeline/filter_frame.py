@@ -47,8 +47,10 @@ def prepare_frame(frame):
 
     return img_resized
 
-# Flou : variance laplacien en dessous de ce seuil est considéré comme flou
-SHARPNESS_THRESHOLD = 40.0
+# Texture : une variance du Laplacien en dessous de ce seuil est considérée comme un aplat sans texture.
+# Ne sert jamais seul (une frame floue reste gardée) : seulement combiné à la saturation ou à la noirceur.
+# Valeur provisoire, à calibrer avec la colonne NotUsable des biologistes
+TEXTURE_THRESHOLD = 5.0
 
 # Un pixel jusqu'à ce niveau de gris est considéré comme noir (les caméras descendent vers 2-3, pas 0)
 DARK_PIXEL_THRESHOLD = 10
@@ -146,10 +148,12 @@ def validate_frame_quality(frame):
     saturation = calculate_saturation_score(gray_img)
     sharpness = calculate_sharpness_score(gray_img)
 
+    has_texture = sharpness >= TEXTURE_THRESHOLD
+    is_burned = (saturation > SATURATED_PERCENT_THRESHOLD) and not has_texture
+    is_dark = darkness > DARK_PERCENT_THRESHOLD and not has_texture
+
     result = (
-        darkness <= DARK_PERCENT_THRESHOLD
-        and saturation <= SATURATED_PERCENT_THRESHOLD
-        and sharpness >= SHARPNESS_THRESHOLD
+        not is_burned and not is_dark
     )
 
     return FrameResult(path=frame, darkness=darkness, saturation=saturation, sharpness=sharpness, result=result)
