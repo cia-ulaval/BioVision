@@ -1,6 +1,8 @@
 import csv
 from pathlib import Path
 
+from pipeline.frame_io import group_frames_by_video
+
 # Une vidéo dont le pourcentage de frames rejetées dépasse ce seuil est prédite NotUsable
 VIDEO_REJECT_PERCENT = 50.0
 
@@ -41,13 +43,8 @@ def video_rejection_percents(frame_results):
         dict[str, float]: Nom de la vidéo -> pourcentage de ses frames rejetées (entre 0 et 100).
     """
 
-    frames_by_video = {}
-    for frame_result in frame_results:
-        video_name = Path(frame_result.path).parent.name
-        frames_by_video.setdefault(video_name, []).append(frame_result)
-
     rejection_percents = {}
-    for video_name, video_frames in frames_by_video.items():
+    for video_name, video_frames in group_frames_by_video(frame_results).items():
         rejected_count = sum(not frame_result.result for frame_result in video_frames)
         rejection_percents[video_name] = 100 * rejected_count / len(video_frames)
 

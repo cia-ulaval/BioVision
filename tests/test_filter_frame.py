@@ -8,9 +8,12 @@ from pathlib import Path
 import numpy as np
 import cv2
 
-from pipeline.filter_frame import prepare_frame, validate_frame_quality, calculate_darkness_score, calculate_sharpness_score, calculate_saturation_score, filter_frames
-from pipeline.filter_frame import DARK_PIXEL_THRESHOLD, DARK_PERCENT_THRESHOLD, SATURATED_PIXEL_THRESHOLD, SATURATED_PERCENT_THRESHOLD
+from pipeline.filter_frame import prepare_frame, validate_frame_quality, calculate_darkness_score, calculate_sharpness_score, calculate_saturation_score, filter_frames, reject_short_videos
+from pipeline.filter_frame import DARK_PIXEL_THRESHOLD, DARK_PERCENT_THRESHOLD, SATURATED_PIXEL_THRESHOLD, SATURATED_PERCENT_THRESHOLD, FRAMES_PER_SECOND, MIN_VIDEO_DURATION
 from pipeline.frame_io import FrameResult
+
+# Nombre maximal de frames d'une vidéo trop courte (rejetée en entier)
+MIN_VIDEO_FRAMES = int(FRAMES_PER_SECOND * MIN_VIDEO_DURATION)
 
 class TestPrepareFrame(unittest.TestCase):
 
@@ -383,6 +386,38 @@ class TestValidateFrameQuality(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             validate_frame_quality(os.path.join(self.temp_dir, "missing.png"))
 
+class TestRejectShortVideos(unittest.TestCase):
+
+    def make_video(self, video, results):
+        # Une FrameResult par valeur de results, dans le dossier `video`. Les scores ne servent pas ici
+        return [FrameResult(path=Path("frames") / video / f"f{index:05d}.jpg", darkness=0.0, saturation=0.0,
+                            sharpness=0.0, result=result)
+                for index, result in enumerate(results)]
+
+    def test_reject_short_videos_at_threshold(self):
+        # Exactement MIN_VIDEO_FRAMES frames : la vidéo est trop courte, toutes ses frames sont rejetées
+        frame_results = self.make_video("short", [True] * MIN_VIDEO_FRAMES)
+        reject_short_videos(frame_results)
+        self.assertEqual([frame_result.result for frame_result in frame_results], [False] * MIN_VIDEO_FRAMES)
+
+    def test_reject_short_videos_just_above_threshold(self):
+        # Une frame de plus : la vidéo est gardée, ses résultats ne changent pas
+        results = [True] * MIN_VIDEO_FRAMES + [False]
+        frame_results = self.make_video("long", results)
+        reject_short_videos(frame_results)
+        self.assertEqual([frame_result.result for frame_result in frame_results], results)
+
+    def test_reject_short_videos_only_affects_short_videos(self):
+        short = self.make_video("short", [True] * MIN_VIDEO_FRAMES)
+        long = self.make_video("long", [True] * (MIN_VIDEO_FRAMES + 1))
+        reject_short_videos(short + long)
+        self.assertFalse(any(frame_result.result for frame_result in short))
+        self.assertTrue(all(frame_result.result for frame_result in long))
+
+    def test_reject_short_videos_returns_frame_results(self):
+        frame_results = self.make_video("long", [True] * (MIN_VIDEO_FRAMES + 1))
+        self.assertIs(reject_short_videos(frame_results), frame_results)
+
 class TestFilterFrames(unittest.TestCase):
 
     def setUp(self):
@@ -407,6 +442,10 @@ class TestFilterFrames(unittest.TestCase):
         cv2.imwrite(str(path), img)
         return path
 
+    def write_good_video(self, folder=".", count=MIN_VIDEO_FRAMES + 1):
+        # Vidéo de frames texturées, juste assez longue par défaut pour ne pas être rejetée
+        return [self.write_frame(Path(folder) / f"good_{index}.png") for index in range(1, count + 1)]
+
     def run_filter_frames(self, csv_path=None):
         # Retourne le résultat et les messages affichés
         output = io.StringIO()
@@ -419,42 +458,42 @@ class TestFilterFrames(unittest.TestCase):
             return list(csv.reader(csvfile))
 
     def test_filter_frames_without_csv_path(self):
-        good = self.write_frame("good.png")
+        good = self.write_good_video()
 
         frames, output = self.run_filter_frames()
 
-        self.assertEqual(frames, [good])
+        self.assertEqual(frames, good)
         self.assertIn("Aucun CSV exporté", output)
         self.assertFalse(self.output_folder.exists())
 
     def test_filter_frames_exports_csv(self):
-        good = self.write_frame("good.png")
+        good = self.write_good_video()
         csv_path = self.output_folder / "frames.csv"
 
         frames, output = self.run_filter_frames(csv_path)
 
-        self.assertEqual(frames, [good])
+        self.assertEqual(frames, good)
         self.assertIn("CSV exporté", output)
-        self.assertEqual([row[0] for row in self.read_csv(csv_path)], ["frame_path", "good.png"])
+        self.assertEqual([row[0] for row in self.read_csv(csv_path)], ["frame_path"] + [path.name for path in good])
 
     def test_filter_frames_when_export_fails(self):
-        good = self.write_frame("good.png")
+        good = self.write_good_video()
         self.output_folder.mkdir()
 
         # csv_path est un dossier : l'écriture échoue
         frames, output = self.run_filter_frames(self.output_folder)
 
-        self.assertEqual(frames, [good])
+        self.assertEqual(frames, good)
         self.assertIn("Échec de l'export du CSV", output)
         self.assertTrue(self.output_folder.is_dir())
 
     def test_filter_frames_ignores_unreadable_frame(self):
-        good = self.write_frame("good.png")
+        good = self.write_good_video()
         (self.input_folder / "invalid.png").write_text("This is not a valid image file.")
 
         frames, output = self.run_filter_frames()
 
-        self.assertEqual(frames, [good])
+        self.assertEqual(frames, good)
         self.assertIn("Frame ignorée", output)
 
     def test_filter_frames_keeps_only_good_frames(self):
@@ -496,13 +535,27 @@ class TestFilterFrames(unittest.TestCase):
         self.assertEqual(len(frames), 1)
 
     def test_filter_frames_with_subfolders(self):
-        good = self.write_frame("video_01/frame_0001.png")
+        good = self.write_good_video("video_01")
         csv_path = self.output_folder / "frames.csv"
 
         frames, _ = self.run_filter_frames(csv_path)
 
-        self.assertEqual(frames, [good])
-        self.assertEqual([row[0] for row in self.read_csv(csv_path)], ["frame_path", "video_01/frame_0001.png"])
+        self.assertEqual(frames, good)
+        self.assertEqual([row[0] for row in self.read_csv(csv_path)],
+                         ["frame_path"] + [f"video_01/{path.name}" for path in good])
+
+    def test_filter_frames_rejects_short_video(self):
+        # La vidéo courte n'a que des frames de bonne qualité, mais elle est rejetée en entier
+        short = self.write_good_video("short", count=MIN_VIDEO_FRAMES)
+        long = self.write_good_video("long")
+        csv_path = self.output_folder / "frames.csv"
+
+        frames, output = self.run_filter_frames(csv_path)
+
+        self.assertEqual(frames, long)
+        self.assertIn(f"{len(long)}/{len(short) + len(long)} frames retenues", output)
+        results = {row[0]: row[4] for row in self.read_csv(csv_path)[1:]}
+        self.assertEqual([results[f"short/{path.name}"] for path in short], ["False"] * len(short))
 
     def test_filter_frames_with_nonexistent_input_folder(self):
         with self.assertRaises(ValueError):

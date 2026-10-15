@@ -55,6 +55,25 @@ def get_frames_from_folder(folder_path, extensions=(".jpg", ".png")):
 
     return sorted(frames)
 
+def group_frames_by_video(frame_results):
+    """Regroupe les résultats des frames par vidéo.
+
+    La vidéo d'une frame est le dossier qui la contient (ex. ".../C00217_2021_03_12_193000_winter_20/f00012.jpg").
+
+    Args:
+        frame_results (list[FrameResult]): Résultats du filtrage des frames.
+
+    Returns:
+        dict[str, list[FrameResult]]: Nom de la vidéo -> ses FrameResult, dans l'ordre reçu.
+    """
+
+    frames_by_video = {}
+    for frame_result in frame_results:
+        video_name = Path(frame_result.path).parent.name
+        frames_by_video.setdefault(video_name, []).append(frame_result)
+
+    return frames_by_video
+
 # Colonnes du CSV des résultats, dans l'ordre d'écriture
 CSV_COLUMNS = ("frame_path", "sharpness", "darkness", "saturation", "result")
 

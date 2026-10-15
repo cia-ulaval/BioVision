@@ -2,7 +2,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from pipeline.frame_io import get_frames_from_folder, export_frame_results_csv, FrameResult
+from pipeline.frame_io import get_frames_from_folder, export_frame_results_csv, group_frames_by_video, FrameResult
 
 # Récupération des frames en utilisant un chemin d'accès à un dossier contenant les frames
 PATH_TO_FRAMES = Path(__file__).parent.parent / "data" / "frames" / "caribou"
@@ -61,6 +61,11 @@ DARK_PERCENT_THRESHOLD = 25.0
 SATURATED_PIXEL_THRESHOLD = 240
 # Une frame dont le pourcentage de pixels saturés dépasse ce seuil est considérée comme surexposée
 SATURATED_PERCENT_THRESHOLD = 25.0
+
+# Cadence d'extraction des frames
+FRAMES_PER_SECOND = 1
+# Une vidéo dont la durée ne dépasse pas ce seuil (en secondes) est rejetée en entier.
+MIN_VIDEO_DURATION = 1.0
 
 def calculate_sharpness_score(gray_img):
     """Calcule le score de netteté d'une image en niveaux de gris en utilisant la variance du Laplacien.
@@ -158,12 +163,38 @@ def validate_frame_quality(frame):
 
     return FrameResult(path=frame, darkness=darkness, saturation=saturation, sharpness=sharpness, result=result)
 
+def reject_short_videos(frame_results):
+    """Rejette toutes les frames des vidéos trop courtes.
+
+    Une vidéo est trop courte si son nombre de frames ne dépasse pas
+    FRAMES_PER_SECOND * MIN_VIDEO_DURATION. Les frames sont regroupées par vidéo
+    avec group_frames_by_video, et le result de chaque frame d'une vidéo trop
+    courte passe à False, quels que soient ses scores.
+
+    Args:
+        frame_results (list[FrameResult]): Résultats de validate_frame_quality.
+
+    Returns:
+        list[FrameResult]: Les mêmes résultats, modifiés sur place.
+    """
+
+    for video_frames in group_frames_by_video(frame_results).values():
+        if len(video_frames) <= FRAMES_PER_SECOND * MIN_VIDEO_DURATION:
+            for frame in video_frames:
+                frame.result = False
+
+    return frame_results
+
 def filter_frames(input_folder=PATH_TO_FRAMES, csv_path=PATH_TO_CSV):
     """Filtre les frames d'un dossier (et de ses sous-dossiers) et exporte les
     résultats de toutes les frames dans un CSV.
 
     Les frames ne sont pas copiées : le CSV contient leurs chemins relatifs à
     input_folder, leurs scores de netteté, de noirceur et de saturation, et la décision.
+
+    Une frame est rejetée si elle est de mauvaise qualité (validate_frame_quality)
+    ou si sa vidéo est trop courte (reject_short_videos). Chaque sous-dossier
+    d'input_folder est une vidéo.
 
     Un message indique toujours le résultat de l'export : CSV écrit, aucun export
     demandé (csv_path vaut None) ou échec de l'écriture. En cas d'échec, les frames
@@ -187,6 +218,8 @@ def filter_frames(input_folder=PATH_TO_FRAMES, csv_path=PATH_TO_CSV):
         except FileNotFoundError as error:
             # Image corrompue ou illisible : on l'ignore et on continue
             print(f"Frame ignorée : {error}")
+
+    reject_short_videos(frame_results)
 
     valid_frames = [frame_result.path for frame_result in frame_results if frame_result.result]
 
