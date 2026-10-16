@@ -18,6 +18,8 @@ venv/
 
 # Notebooks
 .ipynb_checkpoints/
+notebooks/
+.Trash-0/
 
 # Suivi d'expériences
 wandb/
