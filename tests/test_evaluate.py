@@ -47,7 +47,8 @@ class TestVideoRejectionPercents(unittest.TestCase):
 
     def make_frame_result(self, path, result):
         # Les scores ne servent pas au calcul : seul result compte
-        return FrameResult(path=Path(path), darkness=0.0, saturation=0.0, sharpness=0.0, result=result)
+        return FrameResult(path=Path(path), darkness=0.0, saturation=0.0, sharpness=0.0, contrast=0.0, brightness=0.0,
+                           result=result)
 
     def test_video_rejection_percents(self):
         frame_results = [

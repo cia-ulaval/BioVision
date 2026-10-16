@@ -9,7 +9,9 @@ import numpy as np
 import cv2
 
 from pipeline.filter_frame import prepare_frame, validate_frame_quality, calculate_darkness_score, calculate_sharpness_score, calculate_saturation_score, filter_frames, reject_short_videos
+from pipeline.filter_frame import calculate_contrast_score, calculate_brightness_score
 from pipeline.filter_frame import DARK_PIXEL_THRESHOLD, DARK_PERCENT_THRESHOLD, SATURATED_PIXEL_THRESHOLD, SATURATED_PERCENT_THRESHOLD, FRAMES_PER_SECOND, MIN_VIDEO_DURATION
+from pipeline.filter_frame import VEIL_CONTRAST_THRESHOLD, VEIL_BRIGHTNESS_MIN, VEIL_BRIGHTNESS_MAX
 from pipeline.frame_io import FrameResult
 
 # Nombre maximal de frames d'une vidéo trop courte (rejetée en entier)
@@ -245,6 +247,49 @@ class TestCalculateSaturationScore(unittest.TestCase):
         with self.assertRaises(ValueError):
             calculate_saturation_score(None)
 
+class TestCalculateContrastScore(unittest.TestCase):
+
+    def test_contrast_score_with_uniform_image(self):
+        # Une image uniforme n'a aucun contraste
+        score = calculate_contrast_score(np.full((100, 100), 128, dtype=np.uint8))
+        self.assertIsInstance(score, float)
+        self.assertEqual(score, 0.0)
+
+    def test_contrast_score_with_half_black_half_white_image(self):
+        # Moitié 0, moitié 255 : écart-type de 127,5
+        img = np.zeros((100, 100), dtype=np.uint8)
+        img[:, 50:] = 255
+        self.assertEqual(calculate_contrast_score(img), 127.5)
+
+    def test_contrast_score_with_color_image(self):
+        with self.assertRaises(ValueError):
+            calculate_contrast_score(np.zeros((100, 100, 3), dtype=np.uint8))
+
+    def test_contrast_score_with_none_image(self):
+        with self.assertRaises(ValueError):
+            calculate_contrast_score(None)
+
+class TestCalculateBrightnessScore(unittest.TestCase):
+
+    def test_brightness_score_with_uniform_image(self):
+        score = calculate_brightness_score(np.full((100, 100), 128, dtype=np.uint8))
+        self.assertIsInstance(score, float)
+        self.assertEqual(score, 128.0)
+
+    def test_brightness_score_with_half_black_half_white_image(self):
+        # Moitié 0, moitié 255 : moyenne de 127,5
+        img = np.zeros((100, 100), dtype=np.uint8)
+        img[:, 50:] = 255
+        self.assertEqual(calculate_brightness_score(img), 127.5)
+
+    def test_brightness_score_with_color_image(self):
+        with self.assertRaises(ValueError):
+            calculate_brightness_score(np.zeros((100, 100, 3), dtype=np.uint8))
+
+    def test_brightness_score_with_none_image(self):
+        with self.assertRaises(ValueError):
+            calculate_brightness_score(None)
+
 class TestValidateFrameQuality(unittest.TestCase):
 
     def setUp(self):
@@ -286,13 +331,27 @@ class TestValidateFrameQuality(unittest.TestCase):
         path = self.write_image(self.make_checkerboard(50, 200))
         self.assertTrue(validate_frame_quality(path).result)
 
+    def make_blurry_scene(self):
+        # Scène floue mais contrastée : 4 grands carrés 60/200 passés dans un flou gaussien
+        # (texture ~1, contraste ~64), comme un caribou qui broute tête baissée
+        img = np.full((100, 100), 60, dtype=np.uint8)
+        img[:50, :50] = 200
+        img[50:, 50:] = 200
+        return cv2.GaussianBlur(img, (0, 0), 4)
+
+    def make_halves(self, low, high):
+        # Moitié gauche à `low`, moitié droite à `high` : contraste exact de (high - low) / 2
+        img = np.full((100, 100), low, dtype=np.uint8)
+        img[:, 50:] = high
+        return img
+
     def test_validate_frame_quality_with_blurry_image(self):
-        # Bien exposée (gris 128) mais floue (aucun contour, netteté 0) : gardée, le flou seul ne rejette jamais
-        path = self.write_image(np.full((100, 100), 128, dtype=np.uint8))
+        # Floue (texture ~1) mais contrastée : gardée, le flou seul ne rejette jamais
+        path = self.write_image(self.make_blurry_scene())
         self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_returns_frame_result(self):
-        # Un FrameResult avec tous les scores est retourné
+        # Un FrameResult avec tous les scores est retourné, même si la frame est rejetée (ici un voile gris)
         path = self.write_image(np.full((100, 100), 128, dtype=np.uint8))
         frame_result = validate_frame_quality(path)
         self.assertIsInstance(frame_result, FrameResult)
@@ -300,7 +359,45 @@ class TestValidateFrameQuality(unittest.TestCase):
         self.assertEqual(frame_result.darkness, 0.0)
         self.assertEqual(frame_result.saturation, 0.0)
         self.assertEqual(frame_result.sharpness, 0.0)
-        self.assertTrue(frame_result.result)
+        self.assertEqual(frame_result.contrast, 0.0)
+        self.assertEqual(frame_result.brightness, 128.0)
+        self.assertFalse(frame_result.result)
+
+    def test_validate_frame_quality_with_veil_image(self):
+        # Voile de buée : aplat gris uniforme, ni noir ni saturé, rejeté
+        path = self.write_image(np.full((100, 100), 165, dtype=np.uint8))
+        self.assertFalse(validate_frame_quality(path).result)
+
+    def test_validate_frame_quality_at_veil_contrast_threshold(self):
+        # Contraste exactement au seuil : gardée (on rejette strictement en dessous)
+        half = int(VEIL_CONTRAST_THRESHOLD)
+        path = self.write_image(self.make_halves(128 - half, 128 + half))
+        self.assertTrue(validate_frame_quality(path).result)
+
+    def test_validate_frame_quality_just_below_veil_contrast_threshold(self):
+        # 1 point de contraste sous le seuil : rejetée
+        half = int(VEIL_CONTRAST_THRESHOLD) - 1
+        path = self.write_image(self.make_halves(128 - half, 128 + half))
+        self.assertFalse(validate_frame_quality(path).result)
+
+    def test_validate_frame_quality_with_low_contrast_textured_image(self):
+        # Grain fin peu contrasté (comme de la neige) : contraste 8 mais texture élevée, gardée
+        path = self.write_image(self.make_checkerboard(120, 136))
+        self.assertTrue(validate_frame_quality(path).result)
+
+    def test_validate_frame_quality_at_veil_brightness_min(self):
+        # Aplat exactement à la luminosité minimale du voile : rejeté. Juste en dessous (scène de nuit) : gardé
+        at_min = self.write_image(np.full((100, 100), int(VEIL_BRIGHTNESS_MIN), dtype=np.uint8), "at_min.png")
+        below_min = self.write_image(np.full((100, 100), int(VEIL_BRIGHTNESS_MIN) - 1, dtype=np.uint8), "below_min.png")
+        self.assertFalse(validate_frame_quality(at_min).result)
+        self.assertTrue(validate_frame_quality(below_min).result)
+
+    def test_validate_frame_quality_at_veil_brightness_max(self):
+        # Aplat exactement à la luminosité maximale du voile : rejeté. Juste au-dessus : hors du voile
+        at_max = self.write_image(np.full((100, 100), int(VEIL_BRIGHTNESS_MAX), dtype=np.uint8), "at_max.png")
+        above_max = self.write_image(np.full((100, 100), int(VEIL_BRIGHTNESS_MAX) + 1, dtype=np.uint8), "above_max.png")
+        self.assertFalse(validate_frame_quality(at_max).result)
+        self.assertTrue(validate_frame_quality(above_max).result)
 
     def test_validate_frame_quality_with_underexposed_image(self):
         # Sans texture et sous-exposée (10 points de pourcentage de pixels noirs au-dessus du seuil)
@@ -391,7 +488,7 @@ class TestRejectShortVideos(unittest.TestCase):
     def make_video(self, video, results):
         # Une FrameResult par valeur de results, dans le dossier `video`. Les scores ne servent pas ici
         return [FrameResult(path=Path("frames") / video / f"f{index:05d}.jpg", darkness=0.0, saturation=0.0,
-                            sharpness=0.0, result=result)
+                            sharpness=0.0, contrast=0.0, brightness=0.0, result=result)
                 for index, result in enumerate(results)]
 
     def test_reject_short_videos_at_threshold(self):
@@ -514,10 +611,10 @@ class TestFilterFrames(unittest.TestCase):
 
         # La frame brûlée n'est pas retournée, mais elle est dans le CSV avec ses scores
         rows = self.read_csv(csv_path)
-        self.assertEqual(rows[0], ["frame_path", "sharpness", "darkness", "saturation", "result"])
-        self.assertEqual(rows[1], ["burned.png", "0.0", "0.0", "100.0", "False"])
+        self.assertEqual(rows[0], ["frame_path", "sharpness", "darkness", "saturation", "contrast", "brightness", "result"])
+        self.assertEqual(rows[1], ["burned.png", "0.0", "0.0", "100.0", "0.0", f"{float(SATURATED_PIXEL_THRESHOLD)}", "False"])
         self.assertEqual([row[0] for row in rows[1:]], ["burned.png", "good.png"])
-        self.assertEqual([row[4] for row in rows[1:]], ["False", "True"])
+        self.assertEqual([row[-1] for row in rows[1:]], ["False", "True"])
         self.assertEqual(len(frames), 1)
 
     def test_filter_frames_csv_shows_saturation_of_overexposed_frame(self):
@@ -531,7 +628,7 @@ class TestFilterFrames(unittest.TestCase):
         rows = self.read_csv(csv_path)
         self.assertEqual([row[0] for row in rows[1:]], ["good.png", "overexposed.png"])
         self.assertEqual([row[3] for row in rows[1:]], ["0.0", "40.0"])
-        self.assertEqual([row[4] for row in rows[1:]], ["True", "False"])
+        self.assertEqual([row[-1] for row in rows[1:]], ["True", "False"])
         self.assertEqual(len(frames), 1)
 
     def test_filter_frames_with_subfolders(self):
@@ -554,7 +651,7 @@ class TestFilterFrames(unittest.TestCase):
 
         self.assertEqual(frames, long)
         self.assertIn(f"{len(long)}/{len(short) + len(long)} frames retenues", output)
-        results = {row[0]: row[4] for row in self.read_csv(csv_path)[1:]}
+        results = {row[0]: row[-1] for row in self.read_csv(csv_path)[1:]}
         self.assertEqual([results[f"short/{path.name}"] for path in short], ["False"] * len(short))
 
     def test_filter_frames_with_nonexistent_input_folder(self):

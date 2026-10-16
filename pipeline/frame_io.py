@@ -11,6 +11,8 @@ class FrameResult:
         darkness (float): Score de noirceur (pourcentage de pixels noirs).
         saturation (float): Score de saturation (pourcentage de pixels saturés).
         sharpness (float): Score de netteté (variance du Laplacien).
+        contrast (float): Score de contraste (écart-type des niveaux de gris).
+        brightness (float): Score de luminosité (moyenne des niveaux de gris).
         result (bool): True si la frame est retenue, False sinon.
     """
 
@@ -18,6 +20,8 @@ class FrameResult:
     darkness: float
     saturation: float
     sharpness: float
+    contrast: float
+    brightness: float
     result: bool
 
 def get_frames_from_folder(folder_path, extensions=(".jpg", ".png")):
@@ -75,7 +79,7 @@ def group_frames_by_video(frame_results):
     return frames_by_video
 
 # Colonnes du CSV des résultats, dans l'ordre d'écriture
-CSV_COLUMNS = ("frame_path", "sharpness", "darkness", "saturation", "result")
+CSV_COLUMNS = ("frame_path", "sharpness", "darkness", "saturation", "contrast", "brightness", "result")
 
 def export_frame_results_csv(frame_results, base_folder, csv_path):
     """Exporte les résultats du filtrage de toutes les frames vers un fichier CSV.
@@ -86,6 +90,8 @@ def export_frame_results_csv(frame_results, base_folder, csv_path):
         - sharpness : score de netteté (variance du Laplacien).
         - darkness : score de noirceur (pourcentage de pixels noirs).
         - saturation : score de saturation (pourcentage de pixels saturés).
+        - contrast : score de contraste (écart-type des niveaux de gris).
+        - brightness : score de luminosité (moyenne des niveaux de gris).
         - result : True si la frame est retenue, False sinon.
 
     Args:
@@ -117,6 +123,8 @@ def export_frame_results_csv(frame_results, base_folder, csv_path):
                 frame_result.sharpness,
                 frame_result.darkness,
                 frame_result.saturation,
+                frame_result.contrast,
+                frame_result.brightness,
                 frame_result.result
             ])
 
@@ -174,6 +182,8 @@ def read_frame_results_csv(csv_path, base_folder, filter_mode="all"):
                 darkness=float(row["darkness"]),
                 saturation=float(row["saturation"]),
                 sharpness=float(row["sharpness"]),
+                contrast=float(row["contrast"]),
+                brightness=float(row["brightness"]),
                 result=result
             ))
 

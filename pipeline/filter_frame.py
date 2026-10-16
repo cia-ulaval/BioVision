@@ -67,6 +67,16 @@ FRAMES_PER_SECOND = 1
 # Une vidéo dont la durée ne dépasse pas ce seuil (en secondes) est rejetée en entier.
 MIN_VIDEO_DURATION = 1.0
 
+# Voile (buée, givre) : une frame est voilée si son contraste ET sa texture sont bas ET sa luminosité est moyenne.
+# Contraste (écart-type des niveaux de gris) en dessous duquel l'image est un aplat uniforme
+VEIL_CONTRAST_THRESHOLD = 12.0
+# Texture en dessous de laquelle un aplat peut être un voile.
+VEIL_TEXTURE_THRESHOLD = 20.0
+# Luminosité (moyenne des niveaux de gris) d'un voile. En dessous : scène de nuit, peu contrastée mais utilisable.
+# Au-dessus : frame brûlée, déjà gérée par SATURATED_PERCENT_THRESHOLD
+VEIL_BRIGHTNESS_MIN = 60.0
+VEIL_BRIGHTNESS_MAX = 230.0
+
 def calculate_sharpness_score(gray_img):
     """Calcule le score de netteté d'une image en niveaux de gris en utilisant la variance du Laplacien.
 
@@ -137,31 +147,92 @@ def calculate_saturation_score(gray_img):
     saturated_pixels = np.count_nonzero(gray_img >= SATURATED_PIXEL_THRESHOLD)
     return float(100 * saturated_pixels / gray_img.size)
 
+def calculate_contrast_score(gray_img):
+    """Calcule le contraste d'une image en niveaux de gris : l'écart-type de ses niveaux de gris.
+
+    Args:
+        gray_img (np.ndarray): Image en niveaux de gris.
+
+    Raises:
+        ValueError: Si l'image n'est pas en niveaux de gris (2 dimensions).
+        ValueError: Si l'image est None.
+
+    Returns:
+        float: Score de contraste (0 pour une image uniforme).
+    """
+
+    if gray_img is None:
+        raise ValueError("L'image ne peut pas être None.")
+
+    if gray_img.ndim != 2:
+        raise ValueError("L'image doit être en niveaux de gris (2 dimensions).")
+
+    return float(gray_img.std())
+
+def calculate_brightness_score(gray_img):
+    """Calcule la luminosité d'une image en niveaux de gris : la moyenne de ses niveaux de gris.
+    Args:
+        gray_img (np.ndarray): Image en niveaux de gris.
+
+    Raises:
+        ValueError: Si l'image n'est pas en niveaux de gris (2 dimensions).
+        ValueError: Si l'image est None.
+
+    Returns:
+        float: Score de luminosité (entre 0 pour noir et 255 pour blanc).
+    """
+
+    if gray_img is None:
+        raise ValueError("L'image ne peut pas être None.")
+
+    if gray_img.ndim != 2:
+        raise ValueError("L'image doit être en niveaux de gris (2 dimensions).")
+
+    return float(gray_img.mean())
+
 def validate_frame_quality(frame):
-    """Valide la qualité d'une frame en vérifiant sa noirceur, sa saturation et sa netteté.
+    """Valide la qualité d'une frame en vérifiant sa noirceur, sa saturation, sa netteté, son contraste et sa luminosité.
+
+    Une frame est rejetée si elle est :
+        - brûlée : trop de pixels saturés (> SATURATED_PERCENT_THRESHOLD) ET sans texture (< TEXTURE_THRESHOLD) ;
+        - noire : trop de pixels noirs (> DARK_PERCENT_THRESHOLD) ET sans texture (< TEXTURE_THRESHOLD) ;
+        - voilée (buée, givre) : contraste bas (< VEIL_CONTRAST_THRESHOLD) ET texture basse (< VEIL_TEXTURE_THRESHOLD)
+          ET luminosité moyenne (entre VEIL_BRIGHTNESS_MIN et VEIL_BRIGHTNESS_MAX).
+    Le flou seul ne la rejette jamais : chaque condition combine plusieurs mesures.
 
     Args:
         frame (str or Path): Chemin de la frame à valider.
 
     Returns:
-        FrameResult: Chemin de la frame, scores calculés (darkness, saturation, sharpness)
+        FrameResult: Chemin de la frame, scores calculés (darkness, saturation, sharpness, contrast, brightness)
             et result qui vaut True si la frame est de bonne qualité, False sinon.
+
+    Raises:
+        FileNotFoundError: Si la frame n'existe pas ou ne peut pas être lue (levée par prepare_frame).
     """
 
     gray_img = prepare_frame(frame)
     darkness = calculate_darkness_score(gray_img)
     saturation = calculate_saturation_score(gray_img)
     sharpness = calculate_sharpness_score(gray_img)
+    contrast = calculate_contrast_score(gray_img)
+    brightness = calculate_brightness_score(gray_img)
 
     has_texture = sharpness >= TEXTURE_THRESHOLD
     is_burned = (saturation > SATURATED_PERCENT_THRESHOLD) and not has_texture
     is_dark = darkness > DARK_PERCENT_THRESHOLD and not has_texture
-
-    result = (
-        not is_burned and not is_dark
+    is_veil = (
+        contrast < VEIL_CONTRAST_THRESHOLD
+        and sharpness < VEIL_TEXTURE_THRESHOLD
+        and VEIL_BRIGHTNESS_MIN <= brightness <= VEIL_BRIGHTNESS_MAX
     )
 
-    return FrameResult(path=frame, darkness=darkness, saturation=saturation, sharpness=sharpness, result=result)
+    result = (
+        not is_burned and not is_dark and not is_veil
+    )
+
+    return FrameResult(path=frame, darkness=darkness, saturation=saturation, sharpness=sharpness,
+                       contrast=contrast, brightness=brightness, result=result)
 
 def reject_short_videos(frame_results):
     """Rejette toutes les frames des vidéos trop courtes.
