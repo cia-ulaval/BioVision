@@ -1,18 +1,22 @@
 
+import sys
 from pathlib import Path
+
 import cv2
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from config import EXTENSIONS_VIDEO, MO_PAR_GO, SECONDES_PAR_HEURE
+
 
 
 def inventorie_corpus(dossier_videos):
 
     videos = []
 
-    extensions_video = [".mp4", ".avi", ".mov", ".mkv"]
-
     for chemin_video in Path(dossier_videos).rglob("*"):
 
-        if chemin_video.suffix.lower() not in extensions_video:
+        if chemin_video.suffix.lower() not in EXTENSIONS_VIDEO:
             continue
 
         taille_MB = chemin_video.stat().st_size / (1024 ** 2)
@@ -43,9 +47,9 @@ def inventorie_corpus(dossier_videos):
 
     print("Nombre total de vidéos :", len(tableau_videos))
     print("Durée totale (heures) :",
-          tableau_videos["duree_secondes"].sum() / 3600)
+          tableau_videos["duree_secondes"].sum() / SECONDES_PAR_HEURE)
     print("Poids total (GB) :",
-          tableau_videos["taille_mb"].sum() / 1024)
+          tableau_videos["taille_mb"].sum() / MO_PAR_GO)
 
     return tableau_videos
 
