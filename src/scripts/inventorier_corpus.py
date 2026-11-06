@@ -19,7 +19,7 @@ def inventorie_corpus(dossier_videos):
         if chemin_video.suffix.lower() not in EXTENSIONS_VIDEO:
             continue
 
-        taille_MB = chemin_video.stat().st_size / (1024 ** 2)
+        taille_mo = chemin_video.stat().st_size / (1024 ** 2)
 
         capture = cv2.VideoCapture(str(chemin_video))
 
@@ -37,7 +37,7 @@ def inventorie_corpus(dossier_videos):
             "nom": chemin_video.name,
             "chemin": str(chemin_video),
             "duree_secondes": duree_secondes,
-            "taille_MB": taille_MB
+            "taille_mo": taille_mo
         })
 
     colonnes = ["nom", "chemin", "duree_secondes", "taille_mb"]
@@ -49,10 +49,11 @@ def inventorie_corpus(dossier_videos):
     print("Durée totale (heures) :",
           tableau_videos["duree_secondes"].sum() / SECONDES_PAR_HEURE)
     print("Poids total (GB) :",
-          tableau_videos["taille_mb"].sum() / MO_PAR_GO)
+          tableau_videos["taille_mo"].sum() / MO_PAR_GO)
 
     return tableau_videos
 
 
+if __name__ == "__main__":
 # Lancer l'inventaire du corpus
 df_videos = inventorie_corpus("data/videos")
