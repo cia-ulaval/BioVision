@@ -1,7 +1,8 @@
 import cv2
 import numpy as np
 
-from pipeline.filtrage.frame_io import get_frames_from_folder, export_frame_results_csv, group_frames_by_video, FrameResult
+from pipeline.filtrage.frame_io import get_frames_from_folder, export_frame_results_csv, group_frames_by_video
+from pipeline.filtrage.models import FrameResult
 from pipeline.filtrage import config
 
 def prepare_frame(frame):

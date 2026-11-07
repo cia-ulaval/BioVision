@@ -11,7 +11,7 @@ import cv2
 from pipeline.filtrage.filter_frame import prepare_frame, validate_frame_quality, calculate_darkness_score, calculate_sharpness_score, calculate_saturation_score, filter_frames, reject_short_videos
 from pipeline.filtrage.filter_frame import calculate_contrast_score, calculate_brightness_score
 from pipeline.filtrage import config
-from pipeline.filtrage.frame_io import FrameResult
+from pipeline.filtrage.models import FrameResult
 
 # Nombre maximal de frames d'une vidéo trop courte (rejetée en entier)
 MIN_VIDEO_FRAMES = int(config.FRAMES_PER_SECOND * config.MIN_VIDEO_DURATION)

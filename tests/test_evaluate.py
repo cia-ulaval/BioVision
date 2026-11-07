@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pipeline.filtrage.evaluate import read_not_usable_labels, video_rejection_percents, predict_not_usable
 from pipeline.filtrage import config
-from pipeline.filtrage.frame_io import FrameResult
+from pipeline.filtrage.models import FrameResult
 
 class TestReadNotUsableLabels(unittest.TestCase):
 

@@ -1,28 +1,7 @@
-from dataclasses import dataclass
 from pathlib import Path
 import csv
 
-@dataclass
-class FrameResult:
-    """Résultat du filtrage d'une frame.
-
-    Attributes:
-        path (str or Path): Chemin de la frame.
-        darkness (float): Score de noirceur (pourcentage de pixels noirs).
-        saturation (float): Score de saturation (pourcentage de pixels saturés).
-        sharpness (float): Score de netteté (variance du Laplacien).
-        contrast (float): Score de contraste (écart-type des niveaux de gris).
-        brightness (float): Score de luminosité (moyenne des niveaux de gris).
-        result (bool): True si la frame est retenue, False sinon.
-    """
-
-    path: Path
-    darkness: float
-    saturation: float
-    sharpness: float
-    contrast: float
-    brightness: float
-    result: bool
+from pipeline.filtrage.models import FrameResult
 
 def get_frames_from_folder(folder_path, extensions=(".jpg", ".png")):
     """Récupère les frames d'un dossier et de ses sous-dossiers selon les extensions spécifiées.
