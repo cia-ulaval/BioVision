@@ -27,7 +27,7 @@ def read_not_usable_labels(csv_path):
 
         for row in reader:
             video_name = Path(row["File"]).stem
-            not_usable_by_video[video_name] = row["NotUsable"] == "true"
+            not_usable_by_video[video_name] = row["NotUsable"].strip().lower() == "true"
 
     return not_usable_by_video
 
