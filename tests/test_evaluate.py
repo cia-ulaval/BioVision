@@ -2,8 +2,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pipeline.evaluate import read_not_usable_labels, video_rejection_percents, predict_not_usable, VIDEO_REJECT_PERCENT
-from pipeline.frame_io import FrameResult
+from pipeline.filtrage.evaluate import read_not_usable_labels, video_rejection_percents, predict_not_usable
+from pipeline.filtrage import config
+from pipeline.filtrage.frame_io import FrameResult
 
 class TestReadNotUsableLabels(unittest.TestCase):
 
@@ -76,5 +77,5 @@ class TestPredictNotUsable(unittest.TestCase):
 
     def test_predict_not_usable_at_threshold(self):
         # Exactement au seuil : utilisable (on rejette strictement au-dessus)
-        rejection_percents = {"at": VIDEO_REJECT_PERCENT, "above": VIDEO_REJECT_PERCENT + 1}
+        rejection_percents = {"at": config.VIDEO_REJECT_PERCENT, "above": config.VIDEO_REJECT_PERCENT + 1}
         self.assertEqual(predict_not_usable(rejection_percents), {"at": False, "above": True})

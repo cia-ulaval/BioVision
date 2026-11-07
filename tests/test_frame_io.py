@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pipeline.frame_io import get_frames_from_folder, export_frame_results_csv, read_frame_results_csv, FrameResult
+from pipeline.filtrage.frame_io import get_frames_from_folder, export_frame_results_csv, read_frame_results_csv, FrameResult
 
 class TestGetFramesFromFolder(unittest.TestCase):
     def setUp(self):

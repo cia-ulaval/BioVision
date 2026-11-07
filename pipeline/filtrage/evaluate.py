@@ -1,10 +1,8 @@
 import csv
 from pathlib import Path
 
-from pipeline.frame_io import group_frames_by_video
-
-# Une vidéo dont le pourcentage de frames rejetées dépasse ce seuil est prédite NotUsable
-VIDEO_REJECT_PERCENT = 50.0
+from pipeline.filtrage.frame_io import group_frames_by_video
+from pipeline.filtrage import config
 
 def read_not_usable_labels(csv_path):
     """Lit le fichier d'annotation des biologistes et retourne leur décision NotUsable pour chaque vidéo.
@@ -60,4 +58,4 @@ def predict_not_usable(rejection_percents):
         dict[str, bool]: Nom de la vidéo -> True si son pourcentage dépasse VIDEO_REJECT_PERCENT.
     """
 
-    return {video_name: percent > VIDEO_REJECT_PERCENT for video_name, percent in rejection_percents.items()}
+    return {video_name: percent > config.VIDEO_REJECT_PERCENT for video_name, percent in rejection_percents.items()}

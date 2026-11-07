@@ -8,14 +8,13 @@ from pathlib import Path
 import numpy as np
 import cv2
 
-from pipeline.filter_frame import prepare_frame, validate_frame_quality, calculate_darkness_score, calculate_sharpness_score, calculate_saturation_score, filter_frames, reject_short_videos
-from pipeline.filter_frame import calculate_contrast_score, calculate_brightness_score
-from pipeline.filter_frame import DARK_PIXEL_THRESHOLD, DARK_PERCENT_THRESHOLD, SATURATED_PIXEL_THRESHOLD, SATURATED_PERCENT_THRESHOLD, FRAMES_PER_SECOND, MIN_VIDEO_DURATION
-from pipeline.filter_frame import VEIL_CONTRAST_THRESHOLD, VEIL_BRIGHTNESS_MIN, VEIL_BRIGHTNESS_MAX
-from pipeline.frame_io import FrameResult
+from pipeline.filtrage.filter_frame import prepare_frame, validate_frame_quality, calculate_darkness_score, calculate_sharpness_score, calculate_saturation_score, filter_frames, reject_short_videos
+from pipeline.filtrage.filter_frame import calculate_contrast_score, calculate_brightness_score
+from pipeline.filtrage import config
+from pipeline.filtrage.frame_io import FrameResult
 
 # Nombre maximal de frames d'une vidéo trop courte (rejetée en entier)
-MIN_VIDEO_FRAMES = int(FRAMES_PER_SECOND * MIN_VIDEO_DURATION)
+MIN_VIDEO_FRAMES = int(config.FRAMES_PER_SECOND * config.MIN_VIDEO_DURATION)
 
 class TestPrepareFrame(unittest.TestCase):
 
@@ -179,8 +178,8 @@ class TestCalculateDarknessScore(unittest.TestCase):
 
     def test_darkness_score_at_pixel_threshold(self):
         # Un pixel au seuil est noir (<=), un pixel juste au-dessus ne l'est pas
-        at_threshold = np.full((100, 100), DARK_PIXEL_THRESHOLD, dtype=np.uint8)
-        above_threshold = np.full((100, 100), DARK_PIXEL_THRESHOLD + 1, dtype=np.uint8)
+        at_threshold = np.full((100, 100), config.DARK_PIXEL_THRESHOLD, dtype=np.uint8)
+        above_threshold = np.full((100, 100), config.DARK_PIXEL_THRESHOLD + 1, dtype=np.uint8)
         self.assertEqual(calculate_darkness_score(at_threshold), 100.0)
         self.assertEqual(calculate_darkness_score(above_threshold), 0.0)
 
@@ -224,8 +223,8 @@ class TestCalculateSaturationScore(unittest.TestCase):
 
     def test_saturation_score_at_pixel_threshold(self):
         # Un pixel au seuil est saturé (>=), un pixel juste en dessous ne l'est pas
-        at_threshold = np.full((100, 100), SATURATED_PIXEL_THRESHOLD, dtype=np.uint8)
-        below_threshold = np.full((100, 100), SATURATED_PIXEL_THRESHOLD - 1, dtype=np.uint8)
+        at_threshold = np.full((100, 100), config.SATURATED_PIXEL_THRESHOLD, dtype=np.uint8)
+        below_threshold = np.full((100, 100), config.SATURATED_PIXEL_THRESHOLD - 1, dtype=np.uint8)
         self.assertEqual(calculate_saturation_score(at_threshold), 100.0)
         self.assertEqual(calculate_saturation_score(below_threshold), 0.0)
 
@@ -320,11 +319,11 @@ class TestValidateFrameQuality(unittest.TestCase):
 
     def make_flat_dark(self, percent):
         # Aplat dont exactement `percent` % des pixels sont noirs
-        return self.make_flat_with_filled_rows(percent, DARK_PIXEL_THRESHOLD + 1, DARK_PIXEL_THRESHOLD)
+        return self.make_flat_with_filled_rows(percent, config.DARK_PIXEL_THRESHOLD + 1, config.DARK_PIXEL_THRESHOLD)
 
     def make_flat_saturated(self, percent):
         # Aplat dont exactement `percent` % des pixels sont saturés
-        return self.make_flat_with_filled_rows(percent, SATURATED_PIXEL_THRESHOLD - 1, SATURATED_PIXEL_THRESHOLD)
+        return self.make_flat_with_filled_rows(percent, config.SATURATED_PIXEL_THRESHOLD - 1, config.SATURATED_PIXEL_THRESHOLD)
 
     def test_validate_frame_quality_with_good_image(self):
         # Nette (damier), sans pixel noir ni saturé
@@ -370,13 +369,13 @@ class TestValidateFrameQuality(unittest.TestCase):
 
     def test_validate_frame_quality_at_veil_contrast_threshold(self):
         # Contraste exactement au seuil : gardée (on rejette strictement en dessous)
-        half = int(VEIL_CONTRAST_THRESHOLD)
+        half = int(config.VEIL_CONTRAST_THRESHOLD)
         path = self.write_image(self.make_halves(128 - half, 128 + half))
         self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_just_below_veil_contrast_threshold(self):
         # 1 point de contraste sous le seuil : rejetée
-        half = int(VEIL_CONTRAST_THRESHOLD) - 1
+        half = int(config.VEIL_CONTRAST_THRESHOLD) - 1
         path = self.write_image(self.make_halves(128 - half, 128 + half))
         self.assertFalse(validate_frame_quality(path).result)
 
@@ -387,31 +386,31 @@ class TestValidateFrameQuality(unittest.TestCase):
 
     def test_validate_frame_quality_at_veil_brightness_min(self):
         # Aplat exactement à la luminosité minimale du voile : rejeté. Juste en dessous (scène de nuit) : gardé
-        at_min = self.write_image(np.full((100, 100), int(VEIL_BRIGHTNESS_MIN), dtype=np.uint8), "at_min.png")
-        below_min = self.write_image(np.full((100, 100), int(VEIL_BRIGHTNESS_MIN) - 1, dtype=np.uint8), "below_min.png")
+        at_min = self.write_image(np.full((100, 100), int(config.VEIL_BRIGHTNESS_MIN), dtype=np.uint8), "at_min.png")
+        below_min = self.write_image(np.full((100, 100), int(config.VEIL_BRIGHTNESS_MIN) - 1, dtype=np.uint8), "below_min.png")
         self.assertFalse(validate_frame_quality(at_min).result)
         self.assertTrue(validate_frame_quality(below_min).result)
 
     def test_validate_frame_quality_at_veil_brightness_max(self):
         # Aplat exactement à la luminosité maximale du voile : rejeté. Juste au-dessus : hors du voile
-        at_max = self.write_image(np.full((100, 100), int(VEIL_BRIGHTNESS_MAX), dtype=np.uint8), "at_max.png")
-        above_max = self.write_image(np.full((100, 100), int(VEIL_BRIGHTNESS_MAX) + 1, dtype=np.uint8), "above_max.png")
+        at_max = self.write_image(np.full((100, 100), int(config.VEIL_BRIGHTNESS_MAX), dtype=np.uint8), "at_max.png")
+        above_max = self.write_image(np.full((100, 100), int(config.VEIL_BRIGHTNESS_MAX) + 1, dtype=np.uint8), "above_max.png")
         self.assertFalse(validate_frame_quality(at_max).result)
         self.assertTrue(validate_frame_quality(above_max).result)
 
     def test_validate_frame_quality_with_underexposed_image(self):
         # Sans texture et sous-exposée (10 points de pourcentage de pixels noirs au-dessus du seuil)
-        path = self.write_image(self.make_flat_dark(int(DARK_PERCENT_THRESHOLD) + 10))
+        path = self.write_image(self.make_flat_dark(int(config.DARK_PERCENT_THRESHOLD) + 10))
         self.assertFalse(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_at_darkness_threshold(self):
         # Exactement au seuil : gardée (on rejette strictement au-dessus)
-        path = self.write_image(self.make_flat_dark(int(DARK_PERCENT_THRESHOLD)))
+        path = self.write_image(self.make_flat_dark(int(config.DARK_PERCENT_THRESHOLD)))
         self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_just_above_darkness_threshold(self):
         # 1 point de pourcentage au-dessus du seuil : rejetée
-        path = self.write_image(self.make_flat_dark(int(DARK_PERCENT_THRESHOLD) + 1))
+        path = self.write_image(self.make_flat_dark(int(config.DARK_PERCENT_THRESHOLD) + 1))
         self.assertFalse(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_with_black_image(self):
@@ -434,17 +433,17 @@ class TestValidateFrameQuality(unittest.TestCase):
 
     def test_validate_frame_quality_with_overexposed_image(self):
         # Sans texture et surexposée (10 points de pourcentage de pixels saturés au-dessus du seuil)
-        path = self.write_image(self.make_flat_saturated(int(SATURATED_PERCENT_THRESHOLD) + 10))
+        path = self.write_image(self.make_flat_saturated(int(config.SATURATED_PERCENT_THRESHOLD) + 10))
         self.assertFalse(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_at_saturation_threshold(self):
         # Exactement au seuil : gardée (on rejette strictement au-dessus)
-        path = self.write_image(self.make_flat_saturated(int(SATURATED_PERCENT_THRESHOLD)))
+        path = self.write_image(self.make_flat_saturated(int(config.SATURATED_PERCENT_THRESHOLD)))
         self.assertTrue(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_just_above_saturation_threshold(self):
         # 1 point de pourcentage au-dessus du seuil : rejetée
-        path = self.write_image(self.make_flat_saturated(int(SATURATED_PERCENT_THRESHOLD) + 1))
+        path = self.write_image(self.make_flat_saturated(int(config.SATURATED_PERCENT_THRESHOLD) + 1))
         self.assertFalse(validate_frame_quality(path).result)
 
     def test_validate_frame_quality_with_burned_image(self):
@@ -532,8 +531,8 @@ class TestFilterFrames(unittest.TestCase):
             img[::2, ::2] = 200
             img[1::2, 1::2] = 200
         else:
-            img = np.full((100, 100), SATURATED_PIXEL_THRESHOLD - 1, dtype=np.uint8)
-        img[:saturated_percent, :] = SATURATED_PIXEL_THRESHOLD
+            img = np.full((100, 100), config.SATURATED_PIXEL_THRESHOLD - 1, dtype=np.uint8)
+        img[:saturated_percent, :] = config.SATURATED_PIXEL_THRESHOLD
         path = self.input_folder / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(path), img)
@@ -612,7 +611,7 @@ class TestFilterFrames(unittest.TestCase):
         # La frame brûlée n'est pas retournée, mais elle est dans le CSV avec ses scores
         rows = self.read_csv(csv_path)
         self.assertEqual(rows[0], ["frame_path", "sharpness", "darkness", "saturation", "contrast", "brightness", "result"])
-        self.assertEqual(rows[1], ["burned.png", "0.0", "0.0", "100.0", "0.0", f"{float(SATURATED_PIXEL_THRESHOLD)}", "False"])
+        self.assertEqual(rows[1], ["burned.png", "0.0", "0.0", "100.0", "0.0", f"{float(config.SATURATED_PIXEL_THRESHOLD)}", "False"])
         self.assertEqual([row[0] for row in rows[1:]], ["burned.png", "good.png"])
         self.assertEqual([row[-1] for row in rows[1:]], ["False", "True"])
         self.assertEqual(len(frames), 1)
