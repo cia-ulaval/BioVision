@@ -59,3 +59,82 @@ def predict_not_usable(rejection_percents):
     """
 
     return {video_name: percent > config.VIDEO_REJECT_PERCENT for video_name, percent in rejection_percents.items()}
+
+def calculate_recall(predictions, labels):
+    """Calcule le rappel du filtre par rapport aux étiquettes NotUsable des biologistes.
+
+    Répond à la question : le filtre oublie-t-il des vidéos que les biologistes ont rejetées ?
+    Rappel = vrais positifs / (vrais positifs + faux négatifs).
+
+    Proche de 1 : le filtre attrape presque toutes les vidéos NotUsable.
+    Proche de 0 : il en laisse passer la plupart.
+    (à lire avec la précision : rejeter tout donne aussi 1)
+
+    Args:
+        predictions (dict[str, bool]): Résultat de predict_not_usable.
+        labels (dict[str, bool]): Résultat de read_not_usable_labels.
+
+    Returns:
+        float | None: Rappel entre 0 et 1, ou None si aucune vidéo NotUsable n'est comptée.
+    """
+
+    # Vidéos jugées NotUsable par les biologistes
+    not_usable_videos = {video_name for video_name, is_not_usable in labels.items() if is_not_usable}
+
+    # Vrais positifs : rejetées par le filtre et par les biologistes
+    # Faux négatifs : gardées par le filtre, mais rejetées par les biologistes
+    true_positives = 0
+    false_negatives = 0
+
+    for video_name, predicted_not_usable in predictions.items():
+        if predicted_not_usable and video_name in not_usable_videos:
+            true_positives += 1
+        elif not predicted_not_usable and video_name in not_usable_videos:
+            false_negatives += 1
+
+    if (true_positives + false_negatives) == 0:
+        return None
+
+    return true_positives / (true_positives + false_negatives)
+
+def calculate_precision(predictions, labels):
+    """Calcule la précision du filtre par rapport aux étiquettes NotUsable des biologistes.
+
+    Répond à la question : le filtre rejette-t-il des vidéos que les biologistes jugeaient utilisables ?
+    Précision = vrais positifs / (vrais positifs + faux positifs).
+
+    Proche de 1 : presque toutes les vidéos rejetées par le filtre étaient NotUsable.
+    Proche de 0 : le filtre rejette surtout des vidéos utilisables.
+    (à lire avec le rappel : ne rejeter qu'une seule vidéo, à juste titre, donne aussi 1)
+
+    Les vidéos rejetées par le filtre mais absentes de labels sont ignorées.
+
+    Args:
+        predictions (dict[str, bool]): Résultat de predict_not_usable.
+        labels (dict[str, bool]): Résultat de read_not_usable_labels.
+
+    Returns:
+        float | None: Précision entre 0 et 1, ou None si le filtre ne rejette aucune vidéo étiquetée.
+    """
+
+    # Vidéos jugées NotUsable par les biologistes
+    not_usable_videos = {video_name for video_name, is_not_usable in labels.items() if is_not_usable}
+
+    # Vidéos rejetées par le filtre
+    rejected_videos = {video_name for video_name, predicted_not_usable in predictions.items() if predicted_not_usable}
+
+    # Vrais positifs : rejetées par le filtre et par les biologistes
+    # Faux positifs : rejetées par le filtre, mais utilisables selon les biologistes
+    true_positives = 0
+    false_positives = 0
+
+    for video_name in rejected_videos:
+        if video_name in not_usable_videos:
+            true_positives += 1
+        elif video_name in labels:
+            false_positives += 1
+
+    if (true_positives + false_positives) == 0:
+        return None
+
+    return true_positives / (true_positives + false_positives)
