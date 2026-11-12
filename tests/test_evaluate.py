@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pipeline.filtrage.evaluate import read_not_usable_labels, video_rejection_percents, predict_not_usable
 from pipeline.filtrage import config
-from pipeline.filtrage.models import FrameResult
+from pipeline.filtrage.models import FrameResult, Cause
 
 class TestReadNotUsableLabels(unittest.TestCase):
 
@@ -47,9 +47,9 @@ class TestReadNotUsableLabels(unittest.TestCase):
 class TestVideoRejectionPercents(unittest.TestCase):
 
     def make_frame_result(self, path, result):
-        # Les scores ne servent pas au calcul : seul result compte
+        # Les scores et la cause ne servent pas au calcul : seul result compte
         return FrameResult(path=Path(path), darkness=0.0, saturation=0.0, sharpness=0.0, contrast=0.0, brightness=0.0,
-                           result=result)
+                           result=result, cause=None if result else Cause.VOILEE)
 
     def test_video_rejection_percents(self):
         frame_results = [

@@ -1,5 +1,12 @@
 from pathlib import Path
 from dataclasses import dataclass
+from enum import StrEnum
+
+class Cause(StrEnum):
+    BRULEE = "brulee"
+    NOIRE = "noire"
+    VOILEE = "voilee"
+    VIDEO_COURTE = "video_courte"
 
 @dataclass
 class FrameResult:
@@ -22,3 +29,4 @@ class FrameResult:
     contrast: float
     brightness: float
     result: bool
+    cause: Cause | None

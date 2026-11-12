@@ -8,12 +8,17 @@ from pathlib import Path
 import numpy as np
 import cv2
 
-from pipeline.filtrage.filter_frame import validate_frame_quality, filter_frames, reject_short_videos
+from pipeline.filtrage.filter_frame import validate_frame_quality, define_cause, filter_frames, reject_short_videos
 from pipeline.filtrage import config
-from pipeline.filtrage.models import FrameResult
+from pipeline.filtrage.models import FrameResult, Cause
+from pipeline.filtrage.frame_io import CSV_COLUMNS
 
 # Nombre maximal de frames d'une vidéo trop courte (rejetée en entier)
 MIN_VIDEO_FRAMES = int(config.FRAMES_PER_SECOND * config.MIN_VIDEO_DURATION)
+
+# Position des colonnes result et cause dans le CSV des résultats
+RESULT_COLUMN = CSV_COLUMNS.index("result")
+CAUSE_COLUMN = CSV_COLUMNS.index("cause")
 
 class TestValidateFrameQuality(unittest.TestCase):
 
@@ -208,12 +213,58 @@ class TestValidateFrameQuality(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             validate_frame_quality(os.path.join(self.temp_dir, "missing.png"))
 
+    def test_validate_frame_quality_cause_of_good_image(self):
+        # Frame retenue : aucune cause
+        path = self.write_image(self.make_checkerboard(50, 200))
+        frame_result = validate_frame_quality(path)
+        self.assertTrue(frame_result.result)
+        self.assertIsNone(frame_result.cause)
+
+    def test_validate_frame_quality_cause_of_burned_image(self):
+        # Aplat blanc : brûlé (luminosité au-dessus de VEIL_BRIGHTNESS_MAX, donc pas voilé)
+        path = self.write_image(np.full((100, 100), 250, dtype=np.uint8))
+        frame_result = validate_frame_quality(path)
+        self.assertFalse(frame_result.result)
+        self.assertEqual(frame_result.cause, Cause.BRULEE)
+
+    def test_validate_frame_quality_cause_of_black_image(self):
+        # Aplat noir : noir (luminosité sous VEIL_BRIGHTNESS_MIN, donc pas voilé)
+        path = self.write_image(np.full((100, 100), 5, dtype=np.uint8))
+        frame_result = validate_frame_quality(path)
+        self.assertFalse(frame_result.result)
+        self.assertEqual(frame_result.cause, Cause.NOIRE)
+
+    def test_validate_frame_quality_cause_of_veil_image(self):
+        # Aplat gris : ni noir ni saturé, voilé
+        path = self.write_image(np.full((100, 100), 165, dtype=np.uint8))
+        frame_result = validate_frame_quality(path)
+        self.assertFalse(frame_result.result)
+        self.assertEqual(frame_result.cause, Cause.VOILEE)
+
+class TestDefineCause(unittest.TestCase):
+
+    def test_define_cause_with_no_condition(self):
+        self.assertIsNone(define_cause(is_burned=False, is_dark=False, is_veil=False))
+
+    def test_define_cause_with_one_condition(self):
+        self.assertEqual(define_cause(is_burned=True, is_dark=False, is_veil=False), Cause.BRULEE)
+        self.assertEqual(define_cause(is_burned=False, is_dark=True, is_veil=False), Cause.NOIRE)
+        self.assertEqual(define_cause(is_burned=False, is_dark=False, is_veil=True), Cause.VOILEE)
+
+    def test_define_cause_priority(self):
+        # Plusieurs conditions vraies : brûlée, puis noire, puis voilée
+        self.assertEqual(define_cause(is_burned=True, is_dark=True, is_veil=True), Cause.BRULEE)
+        self.assertEqual(define_cause(is_burned=True, is_dark=False, is_veil=True), Cause.BRULEE)
+        self.assertEqual(define_cause(is_burned=False, is_dark=True, is_veil=True), Cause.NOIRE)
+
 class TestRejectShortVideos(unittest.TestCase):
 
     def make_video(self, video, results):
         # Une FrameResult par valeur de results, dans le dossier `video`. Les scores ne servent pas ici
+        # Une frame déjà rejetée avant reject_short_videos l'est par validate_frame_quality (ici : voilée)
         return [FrameResult(path=Path("frames") / video / f"f{index:05d}.jpg", darkness=0.0, saturation=0.0,
-                            sharpness=0.0, contrast=0.0, brightness=0.0, result=result)
+                            sharpness=0.0, contrast=0.0, brightness=0.0, result=result,
+                            cause=None if result else Cause.VOILEE)
                 for index, result in enumerate(results)]
 
     def test_reject_short_videos_at_threshold(self):
@@ -336,10 +387,12 @@ class TestFilterFrames(unittest.TestCase):
 
         # La frame brûlée n'est pas retournée, mais elle est dans le CSV avec ses scores
         rows = self.read_csv(csv_path)
-        self.assertEqual(rows[0], ["frame_path", "sharpness", "darkness", "saturation", "contrast", "brightness", "result"])
-        self.assertEqual(rows[1], ["burned.png", "0.0", "0.0", "100.0", "0.0", f"{float(config.SATURATED_PIXEL_THRESHOLD)}", "False"])
+        self.assertEqual(rows[0], ["frame_path", "sharpness", "darkness", "saturation", "contrast", "brightness", "result", "cause"])
+        self.assertEqual(rows[1], ["burned.png", "0.0", "0.0", "100.0", "0.0", f"{float(config.SATURATED_PIXEL_THRESHOLD)}", "False",
+                                   "brulee"])
         self.assertEqual([row[0] for row in rows[1:]], ["burned.png", "good.png"])
-        self.assertEqual([row[-1] for row in rows[1:]], ["False", "True"])
+        self.assertEqual([row[RESULT_COLUMN] for row in rows[1:]], ["False", "True"])
+        self.assertEqual([row[CAUSE_COLUMN] for row in rows[1:]], ["brulee", ""])
         self.assertEqual(len(frames), 1)
 
     def test_filter_frames_csv_shows_saturation_of_overexposed_frame(self):
@@ -353,7 +406,8 @@ class TestFilterFrames(unittest.TestCase):
         rows = self.read_csv(csv_path)
         self.assertEqual([row[0] for row in rows[1:]], ["good.png", "overexposed.png"])
         self.assertEqual([row[3] for row in rows[1:]], ["0.0", "40.0"])
-        self.assertEqual([row[-1] for row in rows[1:]], ["True", "False"])
+        self.assertEqual([row[RESULT_COLUMN] for row in rows[1:]], ["True", "False"])
+        self.assertEqual([row[CAUSE_COLUMN] for row in rows[1:]], ["", "brulee"])
         self.assertEqual(len(frames), 1)
 
     def test_filter_frames_with_subfolders(self):
@@ -376,8 +430,9 @@ class TestFilterFrames(unittest.TestCase):
 
         self.assertEqual(frames, long)
         self.assertIn(f"{len(long)}/{len(short) + len(long)} frames retenues", output)
-        results = {row[0]: row[-1] for row in self.read_csv(csv_path)[1:]}
-        self.assertEqual([results[f"short/{path.name}"] for path in short], ["False"] * len(short))
+        rows = {row[0]: row for row in self.read_csv(csv_path)[1:]}
+        self.assertEqual([rows[f"short/{path.name}"][RESULT_COLUMN] for path in short], ["False"] * len(short))
+        self.assertEqual([rows[f"short/{path.name}"][CAUSE_COLUMN] for path in short], ["video_courte"] * len(short))
 
     def test_filter_frames_with_nonexistent_input_folder(self):
         with self.assertRaises(ValueError):

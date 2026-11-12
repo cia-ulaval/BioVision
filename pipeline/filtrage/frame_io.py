@@ -1,7 +1,6 @@
 from pathlib import Path
 import csv
-
-from pipeline.filtrage.models import FrameResult
+from pipeline.filtrage.models import FrameResult, Cause
 
 def get_frames_from_folder(folder_path, extensions=(".jpg", ".png")):
     """Récupère les frames d'un dossier et de ses sous-dossiers selon les extensions spécifiées.
@@ -58,7 +57,7 @@ def group_frames_by_video(frame_results):
     return frames_by_video
 
 # Colonnes du CSV des résultats, dans l'ordre d'écriture
-CSV_COLUMNS = ("frame_path", "sharpness", "darkness", "saturation", "contrast", "brightness", "result")
+CSV_COLUMNS = ("frame_path", "sharpness", "darkness", "saturation", "contrast", "brightness", "result", "cause")
 
 def export_frame_results_csv(frame_results, base_folder, csv_path):
     """Exporte les résultats du filtrage de toutes les frames vers un fichier CSV.
@@ -72,6 +71,8 @@ def export_frame_results_csv(frame_results, base_folder, csv_path):
         - contrast : score de contraste (écart-type des niveaux de gris).
         - brightness : score de luminosité (moyenne des niveaux de gris).
         - result : True si la frame est retenue, False sinon.
+        - cause : raison du rejet, une valeur de Cause (ex. "brulee", "video_courte"),
+          ou une chaîne vide si la frame est retenue (cause vaut None).
 
     Args:
         frame_results (list[FrameResult]): Résultats à exporter.
@@ -104,7 +105,8 @@ def export_frame_results_csv(frame_results, base_folder, csv_path):
                 frame_result.saturation,
                 frame_result.contrast,
                 frame_result.brightness,
-                frame_result.result
+                frame_result.result,
+                frame_result.cause
             ])
 
     return frame_results
@@ -127,6 +129,7 @@ def read_frame_results_csv(csv_path, base_folder, filter_mode="all"):
     Raises:
         ValueError: Si filter_mode n'est pas une valeur de FILTER_MODES.
         ValueError: Si une colonne de CSV_COLUMNS manque (CSV d'une ancienne version du filtre).
+        ValueError: Si une cause du CSV n'est pas une valeur de Cause.
         FileNotFoundError: Si le CSV n'existe pas.
     """
 
@@ -163,7 +166,8 @@ def read_frame_results_csv(csv_path, base_folder, filter_mode="all"):
                 sharpness=float(row["sharpness"]),
                 contrast=float(row["contrast"]),
                 brightness=float(row["brightness"]),
-                result=result
+                result=result,
+                cause=None if row["cause"] == "" else Cause(row["cause"])
             ))
 
     return frame_results
