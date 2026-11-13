@@ -9,6 +9,13 @@ PATH_TO_FRAMES = Path(__file__).parent.parent.parent / "data" / "frames" / "cari
 # Chemin pour le csv des résultats
 PATH_TO_CSV = Path(__file__).parent.parent.parent / "data" / "results" / "resultat_filtrage.csv"
 
+# Chemin du rapport par vidéo : pourcentage de frames rejetées, répartition par cause,
+# prédiction du filtre et étiquette des biologistes
+PATH_TO_VIDEO_REPORT_CSV = Path(__file__).parent.parent.parent / "data" / "results" / "rapport_videos.csv"
+
+# Chemin du fichier d'annotation des biologistes (colonnes "File" et "NotUsable")
+PATH_TO_LABELS_CSV = Path(__file__).parent.parent.parent / "data" / "labels" / "Timelapse_videos_caribou_Fanny2.csv"
+
 # Taille maximale du côté pour le redimensionnement des frames
 MAX_SIDE = 640  
 
