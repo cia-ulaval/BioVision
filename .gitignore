@@ -18,6 +18,7 @@ venv/
 
 # Notebooks
 .ipynb_checkpoints/
+.Trash-0/
 
 # Suivi d'expériences
 wandb/
