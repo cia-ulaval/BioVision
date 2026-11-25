@@ -3,8 +3,9 @@ import warnings
 from pathlib import Path
 
 import cv2
+from tqdm.auto import tqdm
 
-from pipeline.extraction.config import PATH_TO_ANNOTATIONS, PATH_TO_FRAMES, FRAMES_PER_SECOND
+from pipeline.extraction.config import PATH_TO_ANNOTATIONS, PATH_TO_FRAMES, FRAMES_PER_SECOND, LOTS_ANNOTES
 
 def trouver_csv_du_lot(dossier_lot, dossier_annotations=PATH_TO_ANNOTATIONS):
     """Trouve le CSV Timelapse d'un lot annoté.
@@ -154,3 +155,40 @@ def extraire_frames_video(chemin_video, dossier_sortie, frames_per_second=FRAMES
         capture.release()
 
     return frames
+
+def extraire_frames_des_lots(lots=LOTS_ANNOTES, dossier_annotations=PATH_TO_ANNOTATIONS, dossier_frames=PATH_TO_FRAMES):
+    """Extrait les frames de toutes les vidéos annotées des lots, rangées par caribou puis par vidéo.
+
+    Les vidéos déjà extraites ne sont pas extraites à nouveau : l'extraction peut être relancée
+    après une interruption. Un bilan est affiché à la fin.
+
+    Args:
+        lots (list[str]): Lots à extraire, relatifs au dossier des annotations (par défaut : LOTS_ANNOTES).
+        dossier_annotations (str or Path): Dossier qui contient les lots (par défaut : PATH_TO_ANNOTATIONS).
+        dossier_frames (str or Path): Dossier racine des frames (par défaut : PATH_TO_FRAMES).
+
+    Returns:
+        dict[str, list[Path]]: Nom de la vidéo -> chemins de ses frames.
+
+    Raises:
+        FileNotFoundError, ValueError: Si un lot n'existe pas ou n'a pas exactement un CSV.
+    """
+
+    frames_par_video = {}
+
+    for lot in lots:
+        videos = lire_videos_du_lot(trouver_csv_du_lot(lot, dossier_annotations))
+
+        for nom_video, chemin_video in tqdm(videos.items(), desc=lot):
+            if nom_video in frames_par_video:
+                warnings.warn(f"Vidéo déjà présente dans un autre lot, ignorée : {chemin_video}")
+                continue
+
+            dossier_sortie = dossier_frames_de_video(chemin_video, dossier_frames)
+            frames_par_video[nom_video] = extraire_frames_video(chemin_video, dossier_sortie)
+
+    videos_vides = [nom for nom, frames in frames_par_video.items() if not frames]
+    nb_frames = sum(len(frames) for frames in frames_par_video.values())
+    print(f"{len(frames_par_video)} vidéos, {nb_frames} frames, {len(videos_vides)} vidéos sans frame")
+
+    return frames_par_video

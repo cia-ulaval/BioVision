@@ -1,13 +1,23 @@
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import cv2
 import numpy as np
 
 from pipeline.extraction.extraction import trouver_csv_du_lot, lire_videos_du_lot, dossier_frames_de_video
-from pipeline.extraction.extraction import extraire_frames_video
+from pipeline.extraction.extraction import extraire_frames_video, extraire_frames_des_lots
 from pipeline.extraction import config
+
+def ecrire_video(chemin, secondes, fps=15):
+    # Petite vidéo de test : 15 fps comme les caméras des colliers
+    writer = cv2.VideoWriter(str(chemin), cv2.VideoWriter_fourcc(*"MJPG"), fps, (32, 32))
+    for index in range(secondes * fps):
+        writer.write(np.full((32, 32, 3), index % 256, dtype=np.uint8))
+    writer.release()
+    return chemin
 
 class TestTrouverCsvDuLot(unittest.TestCase):
 
@@ -137,13 +147,7 @@ class TestExtraireFramesVideo(unittest.TestCase):
         self.sortie = self.dossier / "frames" / "C00217" / "video"
 
     def creer_video(self, secondes, fps=15):
-        # Petite vidéo de test : 15 fps comme les caméras des colliers
-        chemin = self.dossier / "video.avi"
-        writer = cv2.VideoWriter(str(chemin), cv2.VideoWriter_fourcc(*"MJPG"), fps, (32, 32))
-        for index in range(secondes * fps):
-            writer.write(np.full((32, 32, 3), index % 256, dtype=np.uint8))
-        writer.release()
-        return chemin
+        return ecrire_video(self.dossier / "video.avi", secondes, fps)
 
     def test_extraire_frames_video(self):
         frames = extraire_frames_video(self.creer_video(3), self.sortie, frames_per_second=1)
@@ -174,3 +178,58 @@ class TestExtraireFramesVideo(unittest.TestCase):
 
         self.assertEqual(frames, [])
         self.assertFalse(self.sortie.exists())
+
+class TestExtraireFramesDesLots(unittest.TestCase):
+
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.annotations = Path(temp_dir.name) / "annotations"
+        self.frames = Path(temp_dir.name) / "frames"
+
+    def creer_lot(self, lot, videos_presentes, videos_absentes=()):
+        # Les vidéos absentes sont listées dans le CSV, mais pas écrites sur le disque
+        dossier = self.annotations / lot
+        dossier.mkdir(parents=True)
+        for video in videos_presentes:
+            ecrire_video(dossier / video, secondes=2)
+        lines = ["RootFolder,File,RelativePath"] + [f"{lot},{video}," for video in [*videos_presentes, *videos_absentes]]
+        (dossier / "labels.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def extraire(self, lots):
+        # Toujours dans le dossier temporaire, jamais dans PATH_TO_FRAMES
+        with redirect_stdout(io.StringIO()):
+            return extraire_frames_des_lots(lots, self.annotations, self.frames)
+
+    def test_extraire_frames_des_lots(self):
+        self.creer_lot("to_analyse2", ["C00217_a.avi"])
+        self.creer_lot("to_analyse3", ["C00218_b.avi"])
+
+        frames_par_video = self.extraire(["to_analyse2", "to_analyse3"])
+
+        self.assertEqual(frames_par_video, {
+            "C00217_a": [self.frames / "C00217" / "C00217_a" / "f00000.jpg", self.frames / "C00217" / "C00217_a" / "f00015.jpg"],
+            "C00218_b": [self.frames / "C00218" / "C00218_b" / "f00000.jpg", self.frames / "C00218" / "C00218_b" / "f00015.jpg"],
+        })
+
+    def test_extraire_frames_des_lots_avec_video_absente(self):
+        # Une vidéo manquante n'arrête pas l'extraction des autres
+        self.creer_lot("to_analyse2", ["C00217_a.avi"], videos_absentes=["C00217_absente.avi"])
+
+        with self.assertWarns(UserWarning):
+            frames_par_video = self.extraire(["to_analyse2"])
+
+        self.assertEqual(list(frames_par_video), ["C00217_a"])
+
+    def test_extraire_frames_des_lots_avec_video_dans_deux_lots(self):
+        self.creer_lot("to_analyse2", ["C00217_a.avi"])
+        self.creer_lot("to_analyse3", ["C00217_a.avi"])
+
+        with self.assertWarns(UserWarning):
+            frames_par_video = self.extraire(["to_analyse2", "to_analyse3"])
+
+        self.assertEqual(list(frames_par_video), ["C00217_a"])
+
+    def test_extraire_frames_des_lots_avec_lot_inexistant(self):
+        with self.assertRaises(FileNotFoundError):
+            self.extraire(["to_analyse_2"])
