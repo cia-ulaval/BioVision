@@ -1,7 +1,10 @@
 import csv
 import warnings
 from pathlib import Path
-from pipeline.extraction.config import PATH_TO_ANNOTATIONS, PATH_TO_FRAMES
+
+import cv2
+
+from pipeline.extraction.config import PATH_TO_ANNOTATIONS, PATH_TO_FRAMES, FRAMES_PER_SECOND
 
 def trouver_csv_du_lot(dossier_lot, dossier_annotations=PATH_TO_ANNOTATIONS):
     """Trouve le CSV Timelapse d'un lot annoté.
@@ -95,5 +98,59 @@ def dossier_frames_de_video(chemin_video, dossier_frames=PATH_TO_FRAMES):
 
     return Path(dossier_frames) / caribou / nom_video
 
-def extraire_frames_video(chemin_video, dossier_sortie):
-    return NotImplemented
+def extraire_frames_video(chemin_video, dossier_sortie, frames_per_second=FRAMES_PER_SECOND):
+    """Extrait les frames d'une vidéo à une cadence fixe et les écrit en .jpg.
+
+    Chaque frame est nommée d'après son index dans la vidéo (ex. f00000.jpg, f00015.jpg),
+    comme les frames déjà extraites. Une vidéo déjà extraite (dossier contenant des .jpg)
+    n'est pas extraite à nouveau.
+
+    Args:
+        chemin_video (str or Path): Chemin de la vidéo.
+        dossier_sortie (str or Path): Dossier où écrire les frames (créé au besoin).
+        frames_per_second (float): Nombre de frames gardées par seconde de vidéo
+            (par défaut : FRAMES_PER_SECOND).
+
+    Returns:
+        list[Path]: Chemins triés des frames de la vidéo. Liste vide si la vidéo est illisible.
+    """
+
+    chemin_video = Path(chemin_video)
+    dossier_sortie = Path(dossier_sortie)
+
+    frames_existantes = sorted(dossier_sortie.glob("*.jpg"))
+    if frames_existantes:
+        return frames_existantes
+
+    capture = cv2.VideoCapture(str(chemin_video))
+    try:
+        if not capture.isOpened():
+            warnings.warn(f"Vidéo illisible, ignorée : {chemin_video}")
+            return []
+
+        fps_video = capture.get(cv2.CAP_PROP_FPS)
+        if fps_video <= 0:
+            warnings.warn(f"Cadence inconnue, vidéo ignorée : {chemin_video}")
+            return []
+
+        # Ex. vidéo à 15 fps et 1 frame par seconde : on garde une frame sur 15
+        pas = max(1, round(fps_video / frames_per_second))
+
+        dossier_sortie.mkdir(parents=True, exist_ok=True)
+        frames = []
+        index = 0
+
+        # grab() avance sans décoder : seules les frames gardées sont décodées avec retrieve()
+        while capture.grab():
+            if index % pas == 0:
+                lue, image = capture.retrieve()
+                if lue:
+                    chemin_frame = dossier_sortie / f"f{index:05d}.jpg"
+                    cv2.imwrite(str(chemin_frame), image)
+                    frames.append(chemin_frame)
+
+            index += 1
+    finally:
+        capture.release()
+
+    return frames

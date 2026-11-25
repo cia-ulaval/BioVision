@@ -2,7 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import cv2
+import numpy as np
+
 from pipeline.extraction.extraction import trouver_csv_du_lot, lire_videos_du_lot, dossier_frames_de_video
+from pipeline.extraction.extraction import extraire_frames_video
 from pipeline.extraction import config
 
 class TestTrouverCsvDuLot(unittest.TestCase):
@@ -123,3 +127,50 @@ class TestDossierFramesDeVideo(unittest.TestCase):
         dossier = dossier_frames_de_video("C00217_2021_03_12_193000_winter_20.avi", temp_dir.name)
 
         self.assertFalse(dossier.exists())
+
+class TestExtraireFramesVideo(unittest.TestCase):
+
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.dossier = Path(temp_dir.name)
+        self.sortie = self.dossier / "frames" / "C00217" / "video"
+
+    def creer_video(self, secondes, fps=15):
+        # Petite vidéo de test : 15 fps comme les caméras des colliers
+        chemin = self.dossier / "video.avi"
+        writer = cv2.VideoWriter(str(chemin), cv2.VideoWriter_fourcc(*"MJPG"), fps, (32, 32))
+        for index in range(secondes * fps):
+            writer.write(np.full((32, 32, 3), index % 256, dtype=np.uint8))
+        writer.release()
+        return chemin
+
+    def test_extraire_frames_video(self):
+        frames = extraire_frames_video(self.creer_video(3), self.sortie, frames_per_second=1)
+
+        self.assertEqual([frame.name for frame in frames], ["f00000.jpg", "f00015.jpg", "f00030.jpg"])
+        self.assertEqual(sorted(self.sortie.glob("*.jpg")), frames)
+
+    def test_extraire_frames_video_avec_autre_cadence(self):
+        # 3 frames par seconde sur une vidéo à 15 fps : une frame sur 5
+        frames = extraire_frames_video(self.creer_video(1), self.sortie, frames_per_second=3)
+        self.assertEqual([frame.name for frame in frames], ["f00000.jpg", "f00005.jpg", "f00010.jpg"])
+
+    def test_extraire_frames_video_deja_extraite(self):
+        # Reprise : une vidéo déjà extraite n'est pas extraite à nouveau
+        self.sortie.mkdir(parents=True)
+        (self.sortie / "f00000.jpg").write_text("test")
+
+        frames = extraire_frames_video(self.creer_video(3), self.sortie, frames_per_second=1)
+
+        self.assertEqual(frames, [self.sortie / "f00000.jpg"])
+
+    def test_extraire_frames_video_illisible(self):
+        chemin = self.dossier / "pas_une_video.avi"
+        chemin.write_text("test")
+
+        with self.assertWarns(UserWarning):
+            frames = extraire_frames_video(chemin, self.sortie)
+
+        self.assertEqual(frames, [])
+        self.assertFalse(self.sortie.exists())
