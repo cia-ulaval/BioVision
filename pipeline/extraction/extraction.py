@@ -3,7 +3,7 @@ import warnings
 from pathlib import Path
 
 import cv2
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 from pipeline.extraction.config import PATH_TO_ANNOTATIONS, PATH_TO_FRAMES, FRAMES_PER_SECOND, LOTS_ANNOTES
 
