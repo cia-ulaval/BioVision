@@ -1,7 +1,7 @@
 import csv
 import warnings
 from pathlib import Path
-from pipeline.extraction.config import PATH_TO_ANNOTATIONS
+from pipeline.extraction.config import PATH_TO_ANNOTATIONS, PATH_TO_FRAMES
 
 def trouver_csv_du_lot(dossier_lot, dossier_annotations=PATH_TO_ANNOTATIONS):
     """Trouve le CSV Timelapse d'un lot annoté.
@@ -76,8 +76,24 @@ def lire_videos_du_lot(csv_path):
 
     return videos
 
-def dossier_frames_de_video(chemin_video):
-    return NotImplemented
+def dossier_frames_de_video(chemin_video, dossier_frames=PATH_TO_FRAMES):
+    """Construit le dossier de sortie des frames d'une vidéo : <dossier_frames>/<caribou>/<vidéo>/.
+
+    Le dossier n'est pas créé : seul le chemin est calculé.
+
+    Args:
+        chemin_video (str or Path): Chemin de la vidéo (ex. ".../C00217_2021_03_12_193000_winter_20.avi").
+        dossier_frames (str or Path): Dossier racine des frames.
+
+    Returns:
+        Path: Dossier des frames de la vidéo (ex. "/frames/C00217/C00217_2021_03_12_193000_winter_20").
+    """
+
+    nom_video = Path(chemin_video).stem
+    # Le nom de la vidéo commence par l'identifiant du caribou (ex. "C00217")
+    caribou = nom_video[:6]
+
+    return Path(dossier_frames) / caribou / nom_video
 
 def extraire_frames_video(chemin_video, dossier_sortie):
     return NotImplemented

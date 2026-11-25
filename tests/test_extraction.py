@@ -2,7 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pipeline.extraction.extraction import trouver_csv_du_lot, lire_videos_du_lot
+from pipeline.extraction.extraction import trouver_csv_du_lot, lire_videos_du_lot, dossier_frames_de_video
+from pipeline.extraction import config
 
 class TestTrouverCsvDuLot(unittest.TestCase):
 
@@ -97,3 +98,28 @@ class TestLireVideosDuLot(unittest.TestCase):
             videos = lire_videos_du_lot(self.csv_path)
 
         self.assertEqual(videos, {"video_a": self.lot / "video_a.avi"})
+
+class TestDossierFramesDeVideo(unittest.TestCase):
+
+    def test_dossier_frames_de_video(self):
+        chemin_video = Path("/videos/annotations/to_analyse2/C00217_2021_03_12_193000_winter_20.avi")
+        self.assertEqual(dossier_frames_de_video(chemin_video, Path("frames")),
+                         Path("frames") / "C00217" / "C00217_2021_03_12_193000_winter_20")
+
+    def test_dossier_frames_de_video_avec_chemin_en_texte(self):
+        chemin_video = "/videos/annotations/to_analyse2/C00217_2021_03_12_193000_winter_20.avi"
+        self.assertEqual(dossier_frames_de_video(chemin_video, "frames"),
+                         Path("frames") / "C00217" / "C00217_2021_03_12_193000_winter_20")
+
+    def test_dossier_frames_de_video_par_defaut(self):
+        chemin_video = Path("C00225_2021_06_01_120000_summer_33.avi")
+        self.assertEqual(dossier_frames_de_video(chemin_video),
+                         config.PATH_TO_FRAMES / "C00225" / "C00225_2021_06_01_120000_summer_33")
+
+    def test_dossier_frames_de_video_ne_cree_pas_le_dossier(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+
+        dossier = dossier_frames_de_video("C00217_2021_03_12_193000_winter_20.avi", temp_dir.name)
+
+        self.assertFalse(dossier.exists())
